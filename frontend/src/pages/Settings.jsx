@@ -1,0 +1,71 @@
+import { useEffect, useState } from 'react'
+import { PageHead } from '../components/Layout'
+import { Confirm, Select } from '../components/ui'
+import { api } from '../lib/api'
+import { useStore } from '../lib/store'
+
+const ROLES = [{ value: 'admin', label: 'Admin (semua akses)' }, { value: 'crm', label: 'CRM (data + CMS)' }, { value: 'cs', label: 'CS (data reseller & aktivitas)' }, { value: 'viewer', label: 'Viewer (hanya lihat)' }]
+
+export default function Settings() {
+  const { meta, run, can, user, notify } = useStore()
+  const [s, setS] = useState(null)
+  const [users, setUsers] = useState([])
+  const [uf, setUf] = useState(null) // form user
+  const [confirm, setConfirm] = useState(null)
+  const [pw, setPw] = useState('')
+  useEffect(() => { if (meta && !s) { const x = meta.settings; setS({ ...x, pic: x.pic.join(', '), channel: x.channel.join(', '), area: x.area.join(', ') }) } }, [meta]) // eslint-disable-line
+  const loadUsers = () => can.admin && api('/api/users').then(setUsers).catch(() => {})
+  useEffect(() => { loadUsers() }, [can.admin]) // eslint-disable-line
+  if (!s) return null
+  const ro = !can.admin
+  const set = (k) => (e) => setS({ ...s, [k]: e.target.value })
+  const split = (v) => v.split(',').map(x => x.trim()).filter(Boolean)
+  const save = () => run(() => api('/api/settings', { method: 'PUT', body: { pic: split(s.pic), channel: split(s.channel), area: split(s.area), pasifDays: +s.pasifDays || 30, churnDays: +s.churnDays || 90, followUpDays: +s.followUpDays || 14 } }), 'Pengaturan tersimpan').catch(() => {})
+  const saveUser = async (e) => {
+    e.preventDefault()
+    const body = { email: uf.email, name: uf.name, role: uf.role, active: uf.active, password: uf.password || null }
+    try { await (uf.id ? api(`/api/users/${uf.id}`, { method: 'PUT', body }) : api('/api/users', { method: 'POST', body })); notify('User tersimpan'); setUf(null); loadUsers() } catch (ex) { notify('Gagal: ' + ex.message) }
+  }
+  return (
+    <>
+      <PageHead title="<b>Pengaturan</b>" sub="Daftar PIC, channel, area, aturan status otomatis, dan pengguna.">
+        {!ro && <button className="btn btn-primary" onClick={save}>Simpan</button>}
+      </PageHead>
+      <div className="grid lg:grid-cols-2 gap-4">
+        <div className="card"><h3 className="card-title">Daftar PIC</h3><div className="hint">Pisahkan dengan koma</div><input className="inp" value={s.pic} onChange={set('pic')} readOnly={ro} /></div>
+        <div className="card"><h3 className="card-title">Channel Masuk</h3><div className="hint">Pisahkan dengan koma</div><input className="inp" value={s.channel} onChange={set('channel')} readOnly={ro} /></div>
+        <div className="card"><h3 className="card-title">Area Operasional</h3><div className="hint">Pisahkan dengan koma</div><input className="inp" value={s.area} onChange={set('area')} readOnly={ro} /></div>
+        <div className="card"><h3 className="card-title">Aturan Otomatis</h3><div className="hint">Status dihitung dari hari sejak order terakhir</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div><label className="lbl">Pasif jika tidak order (hari)</label><input className="inp" type="number" value={s.pasifDays} onChange={set('pasifDays')} readOnly={ro} /></div>
+            <div><label className="lbl">Churn jika tidak order (hari)</label><input className="inp" type="number" value={s.churnDays} onChange={set('churnDays')} readOnly={ro} /></div>
+            <div className="col-span-2"><label className="lbl">Follow-up setelah order pertama (hari)</label><input className="inp" type="number" value={s.followUpDays} onChange={set('followUpDays')} readOnly={ro} /></div>
+          </div></div>
+        <div className="card"><h3 className="card-title">Akun Saya</h3><div className="hint">{user.name} · {user.email} · {user.role}</div>
+          <label className="lbl">Ganti kata sandi</label>
+          <div className="flex gap-2"><input className="inp" type="password" placeholder="min. 6 karakter" value={pw} onChange={e => setPw(e.target.value)} />
+            <button className="btn btn-sm whitespace-nowrap" onClick={() => api('/api/auth/password', { method: 'POST', body: { password: pw } }).then(() => { notify('Kata sandi diganti'); setPw('') }).catch(e => notify('Gagal: ' + e.message))}>Simpan</button></div></div>
+        {can.admin && <div className="card"><h3 className="card-title">Data</h3><div className="hint">Isi contoh data untuk uji coba, atau hapus semua data reseller.</div>
+          <div className="flex gap-2 flex-wrap"><button className="btn" onClick={() => run(() => api('/api/admin/seed', { method: 'POST' }), 'Data contoh dimuat')}>Isi Data Contoh</button><button className="btn btn-danger" onClick={() => setConfirm('wipe')}>Hapus Semua Reseller</button></div>
+          {confirm === 'wipe' && <Confirm title="Hapus semua reseller & aktivitas?" text="Tidak bisa dibatalkan." yesLabel="Ya, hapus semua" onNo={() => setConfirm(null)} onYes={() => run(() => api('/api/admin/wipe', { method: 'POST' }), 'Semua data dihapus').then(() => setConfirm(null))} />}</div>}
+        {can.admin && <div className="card lg:col-span-2"><h3 className="card-title">Pengguna</h3><div className="hint">Admin: semua akses · CRM: data + CMS · CS: data reseller & aktivitas · Viewer: hanya lihat</div>
+          <div className="overflow-x-auto"><table className="table"><thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
+            {users.map(u => <tr key={u.id}><td>{u.name}</td><td>{u.email}</td><td><span className="tag">{u.role}</span></td><td>{u.active ? <span className="tag tag-good">aktif</span> : <span className="tag tag-muted">nonaktif</span>}</td>
+              <td className="whitespace-nowrap"><button className="btn btn-sm" onClick={() => setUf({ ...u, password: '' })}>Edit</button>{u.id !== user.id && <button className="btn btn-danger btn-sm ml-1" onClick={() => setConfirm(u.id)}>Hapus</button>}</td></tr>)}
+          </tbody></table></div>
+          <button className="btn btn-sm mt-3" onClick={() => setUf({ email: '', name: '', role: 'cs', active: true, password: '' })}>+ Tambah pengguna</button>
+          {confirm && confirm !== 'wipe' && <Confirm title="Hapus pengguna ini?" yesLabel="Ya, hapus" onNo={() => setConfirm(null)} onYes={() => api(`/api/users/${confirm}`, { method: 'DELETE' }).then(() => { notify('User dihapus'); setConfirm(null); loadUsers() }).catch(e => notify('Gagal: ' + e.message))} />}
+          {uf && <form onSubmit={saveUser} className="card border-brick mt-4"><h4 className="text-[13px] font-bold mb-2">{uf.id ? 'Edit pengguna' : 'Pengguna baru'}</h4>
+            <div className="grid md:grid-cols-2 gap-3">
+              <div><label className="lbl">Nama</label><input className="inp" value={uf.name} onChange={e => setUf({ ...uf, name: e.target.value })} required /></div>
+              <div><label className="lbl">Email</label><input className="inp" type="email" value={uf.email} onChange={e => setUf({ ...uf, email: e.target.value })} required /></div>
+              <div><label className="lbl">Role</label><Select options={ROLES} value={uf.role} onChange={v => setUf({ ...uf, role: v })} /></div>
+              <div><label className="lbl">Kata sandi {uf.id && '(kosongkan bila tidak diganti)'}</label><input className="inp" type="password" value={uf.password} onChange={e => setUf({ ...uf, password: e.target.value })} required={!uf.id} minLength={6} /></div>
+              <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={uf.active} onChange={e => setUf({ ...uf, active: e.target.checked })} /> Akun aktif</label>
+            </div>
+            <div className="flex gap-2 mt-3"><button className="btn btn-primary btn-sm">Simpan</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setUf(null)}>Batal</button></div></form>}
+        </div>}
+      </div>
+    </>
+  )
+}
