@@ -1,3 +1,4 @@
+import logging
 import os
 from contextlib import asynccontextmanager
 
@@ -24,8 +25,15 @@ async def ensure_admin() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await ensure_indexes()
-    await ensure_admin()
+    # Jangan matikan server bila database belum siap: healthcheck tetap jalan, error tampil di log.
+    try:
+        await ensure_indexes()
+        await ensure_admin()
+        app.state.db_ok = True
+    except Exception as exc:  # noqa: BLE001
+        app.state.db_ok = False
+        app.state.db_error = f"{type(exc).__name__}: {exc}"
+        logging.error("DATABASE TIDAK TERHUBUNG. Periksa MONGO_URL dan Network Access di Atlas. Detail: %s", app.state.db_error)
     yield
 
 
@@ -38,7 +46,15 @@ app.include_router(router)
 
 @app.get("/api/health")
 async def health():
-    return {"ok": True}
+    ok = getattr(app.state, "db_ok", False)
+    if not ok:
+        try:
+            await get_db().command("ping")
+            await ensure_indexes(); await ensure_admin()
+            app.state.db_ok = ok = True
+        except Exception as exc:  # noqa: BLE001
+            app.state.db_error = f"{type(exc).__name__}: {exc}"
+    return {"ok": True, "database": "terhubung" if ok else "GAGAL: " + getattr(app.state, "db_error", "")}
 
 
 @app.exception_handler(Exception)

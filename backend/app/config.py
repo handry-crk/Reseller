@@ -1,6 +1,6 @@
 import os
 
-MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017/?serverSelectionTimeoutMS=5000")
 DB_NAME = os.getenv("DB_NAME", "reseller")
 JWT_SECRET = os.getenv("JWT_SECRET", "ganti-secret-ini-di-production")
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "72"))
