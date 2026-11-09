@@ -1,6 +1,10 @@
 """Uji aturan alur reseller lewat API (database in-memory)."""
 from datetime import timedelta
 
+import os
+
+os.environ["ALLOW_DEFAULT_SECRET"] = "1"
+
 import pytest
 from httpx import ASGITransport, AsyncClient
 from mongomock_motor import AsyncMongoMockClient
@@ -166,3 +170,37 @@ async def test_stage_history(client):
     assert auto["fromStage"] == "lead" and auto["toStage"] == "order1"
     manual = [x for x in h["rows"] if not x["auto"]][0]
     assert manual["fromStage"] == "order1" and manual["toLabel"] == "Form Pendaftaran"
+
+
+@pytest.mark.asyncio
+async def test_delete_order_reverts_stage(client):
+    r = await make_reseller(client)
+    a1 = (await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "qty": 10, "amount": 1, "date": (today() - timedelta(days=3)).isoformat()})).json()["activity"]
+    a2 = (await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "qty": 10, "amount": 1})).json()["activity"]
+    assert (await client.get(f"/api/resellers/{r['id']}")).json()["stage"] == "repeat"
+    await client.delete(f"/api/activities/{a2['id']}")
+    assert (await client.get(f"/api/resellers/{r['id']}")).json()["stage"] == "order1"
+    await client.delete(f"/api/activities/{a1['id']}")
+    d = (await client.get(f"/api/resellers/{r['id']}")).json()
+    assert d["stage"] == "form" and d["nextFollowUp"] == "" and d["status"] == "Lead"
+
+
+@pytest.mark.asyncio
+async def test_future_date_rejected_and_historic_order_no_followup(client):
+    r = await make_reseller(client)
+    res = await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "qty": 1, "amount": 1, "date": (today() + timedelta(days=2)).isoformat()})
+    assert res.status_code == 422
+    d = await order(client, r["id"], 10, days_ago=200)
+    assert d["stage"] == "order1" and d["nextFollowUp"] == "" and d["status"] == "Churn" and d["tier"] == ""
+
+
+@pytest.mark.asyncio
+async def test_spa_path_traversal_blocked(client):
+    import os
+    from app import main as m
+    static = os.path.join(os.path.dirname(m.__file__), "..", "static")
+    if not os.path.isdir(static):
+        pytest.skip("frontend belum di-build ke backend/static")
+    res = await client.get("/..%2fapp%2fconfig.py")
+    assert res.status_code == 200 and "JWT_SECRET" not in res.text
+    assert (await client.get("/api/tidak-ada")).status_code == 404

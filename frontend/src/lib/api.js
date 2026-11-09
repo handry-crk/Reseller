@@ -22,7 +22,8 @@ export async function api(path, { method = 'GET', body } = {}) {
 
 export const fmtRp = (n) => 'Rp' + Math.round(n || 0).toLocaleString('id-ID')
 export const fmtN = (n) => (n || 0).toLocaleString('id-ID')
-export const today = () => new Date().toISOString().slice(0, 10)
+// Tanggal lokal (bukan UTC) agar tidak mundur sehari antara 00:00–07:00 WIB.
+export const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 export const fill = (tpl, r) => (tpl || '').replace(/\{nama\}/g, r?.name || '').replace(/\{tier\}/g, r?.tier || '')
 export const waLink = (phone, text) => {
   let p = (phone || '').replace(/\D/g, '')

@@ -22,7 +22,7 @@ def compute_tier(packs_30: int, tiers: list[dict]) -> str:
     if not tiers:
         return ""
     ordered = sorted(tiers, key=lambda t: int(t.get("minPacks", 0)))
-    result = ordered[0]["name"]
+    result = ""  # di bawah tier terendah = belum masuk tier
     for t in ordered:
         if packs_30 >= int(t.get("minPacks", 0)):
             result = t["name"]
@@ -38,7 +38,7 @@ def enrich(reseller: dict, activities: list[dict], settings: dict, cms: dict, re
     revenue = sum(int(a.get("amount") or 0) for a in orders)
     last = orders[-1]["date"] if orders else ""
     first = orders[0]["date"] if orders else ""
-    days_since = (ref - date.fromisoformat(last)).days if last else None
+    days_since = max(0, (ref - date.fromisoformat(last)).days) if last else None
     cutoff = (ref - timedelta(days=30)).isoformat()
     packs_30 = sum(int(a.get("qty") or 0) for a in orders if a.get("date", "") >= cutoff)
     open_c = sum(1 for a in activities if a.get("type") == "complaint" and a.get("status") != "resolved")
@@ -85,9 +85,12 @@ def apply_activity_rules(reseller: dict, activity: dict, orders_after: int, sett
     changes: dict = {}
     t = activity["type"]
     if t == "order":
-        if orders_after == 1 and idx < 2:
+        if orders_after == 1 and (idx < 2 or cur == "reaktivasi"):
             changes["stage"] = "order1"
-            changes["nextFollowUp"] = (ref + timedelta(days=int(settings.get("followUpDays", 14)))).isoformat()
+            # Follow-up dihitung dari tanggal order (bukan hari ini); order historis yang sudah lewat tidak dijadwalkan.
+            base = date.fromisoformat(activity.get("date") or ref.isoformat())
+            due = base + timedelta(days=int(settings.get("followUpDays", 14)))
+            changes["nextFollowUp"] = due.isoformat() if due >= ref else ""
         if orders_after >= 2 and (idx <= 2 or cur == "reaktivasi"):
             changes["stage"] = "repeat"
             changes["nextFollowUp"] = ""
@@ -119,3 +122,15 @@ def monthly_revenue(orders: list[dict], months: int = 12, ref: date | None = Non
         out.append({"month": k, "orders": len(rows), "packs": sum(int(o.get("qty") or 0) for o in rows),
                     "revenue": sum(int(o.get("amount") or 0) for o in rows)})
     return out
+
+
+def stage_after_order_removed(reseller: dict, orders_left: int) -> dict:
+    """Koreksi tahap bila sebuah order dihapus, agar tahap tidak lebih maju dari jumlah order."""
+    cur = reseller.get("stage", "lead")
+    changes: dict = {}
+    if orders_left == 0 and cur in ("order1", "repeat", "reaktivasi"):
+        changes["stage"] = "form"
+        changes["nextFollowUp"] = ""
+    elif orders_left == 1 and cur == "repeat":
+        changes["stage"] = "order1"
+    return changes

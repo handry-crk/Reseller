@@ -20,7 +20,7 @@ export default function Settings() {
   const ro = !can.admin
   const set = (k) => (e) => setS({ ...s, [k]: e.target.value })
   const split = (v) => v.split(',').map(x => x.trim()).filter(Boolean)
-  const save = () => run(() => api('/api/settings', { method: 'PUT', body: { pic: split(s.pic), channel: split(s.channel), area: split(s.area), pasifDays: +s.pasifDays || 30, churnDays: +s.churnDays || 90, followUpDays: +s.followUpDays || 14, company: s.company } }), 'Pengaturan tersimpan').catch(() => {})
+  const save = () => run(() => api('/api/settings', { method: 'PUT', body: { pic: split(s.pic), channel: split(s.channel), area: split(s.area), pasifDays: +s.pasifDays || 30, churnDays: +s.churnDays || 90, followUpDays: +s.followUpDays || 14, company: s.company } }), 'Pengaturan tersimpan').then(() => {}, () => {})
   const saveUser = async (e) => {
     e.preventDefault()
     const body = { email: uf.email, name: uf.name, role: uf.role, active: uf.active, password: uf.password || null }
@@ -55,8 +55,8 @@ export default function Settings() {
           <div className="flex gap-2"><input className="inp" type="password" placeholder="min. 6 karakter" value={pw} onChange={e => setPw(e.target.value)} />
             <button className="btn btn-sm whitespace-nowrap" onClick={() => api('/api/auth/password', { method: 'POST', body: { password: pw } }).then(() => { notify('Kata sandi diganti'); setPw('') }).catch(e => notify('Gagal: ' + e.message))}>Simpan</button></div></div>
         {can.admin && <div className="card"><h3 className="card-title">Data</h3><div className="hint">Isi contoh data untuk uji coba, atau hapus semua data reseller.</div>
-          <div className="flex gap-2 flex-wrap"><button className="btn" onClick={() => run(() => api('/api/admin/seed', { method: 'POST' }), 'Data contoh dimuat')}>Isi Data Contoh</button><button className="btn btn-danger" onClick={() => setConfirm('wipe')}>Hapus Semua Reseller</button></div>
-          {confirm === 'wipe' && <Confirm title="Hapus semua reseller & aktivitas?" text="Tidak bisa dibatalkan." yesLabel="Ya, hapus semua" onNo={() => setConfirm(null)} onYes={() => run(() => api('/api/admin/wipe', { method: 'POST' }), 'Semua data dihapus').then(() => setConfirm(null))} />}</div>}
+          <div className="flex gap-2 flex-wrap"><button className="btn" onClick={() => run(() => api('/api/admin/seed', { method: 'POST' }), 'Data contoh dimuat').catch(() => {})}>Isi Data Contoh</button><button className="btn btn-danger" onClick={() => setConfirm('wipe')}>Hapus Semua Reseller</button></div>
+          {confirm === 'wipe' && <Confirm title="Hapus semua reseller & aktivitas?" text="Tidak bisa dibatalkan." yesLabel="Ya, hapus semua" onNo={() => setConfirm(null)} onYes={() => run(() => api('/api/admin/wipe', { method: 'POST' }), 'Semua data dihapus').then(() => setConfirm(null), () => {})} />}</div>}
         {can.admin && <div className="card lg:col-span-2"><h3 className="card-title">Pengguna</h3><div className="hint">Admin: semua akses · CRM: data + CMS · CS: data reseller & aktivitas · Gudang: monitoring & status pesanan · Viewer: hanya lihat</div>
           <div className="overflow-x-auto"><table className="table"><thead><tr><th>Nama</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
             {users.map(u => <tr key={u.id}><td>{u.name}</td><td>{u.email}</td><td><span className="tag">{u.role}</span></td><td>{u.active ? <span className="tag tag-good">aktif</span> : <span className="tag tag-muted">nonaktif</span>}</td>

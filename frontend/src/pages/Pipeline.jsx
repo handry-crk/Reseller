@@ -15,7 +15,7 @@ export default function Pipeline() {
     const r = resellers.find(x => x.id === dragId)
     setOver(null); setDragId(null)
     if (!r || r.stage === stage || !can.write) return
-    run(() => api(`/api/resellers/${r.id}/stage`, { method: 'POST', body: { stage } }), `${r.name} → ${meta.stages.find(s => s.id === stage).label}`)
+    run(() => api(`/api/resellers/${r.id}/stage`, { method: 'POST', body: { stage } }), `${r.name} → ${meta.stages.find(s => s.id === stage).label}`).catch(() => {})
   }
   return (
     <>

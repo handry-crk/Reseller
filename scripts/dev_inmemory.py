@@ -10,6 +10,8 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "backend"))
 
+os.environ.setdefault("ALLOW_DEFAULT_SECRET", "1")
+
 import uvicorn  # noqa: E402
 from mongomock_motor import AsyncMongoMockClient  # noqa: E402
 

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .auth import CMS_ROLES, WRITE_ROLES, current_user, hash_password, make_token, require, verify_password
 from .db import get_db
 from .defaults import ORDER_STATUSES, STAGES
-from .rules import apply_activity_rules, monthly_revenue, today
+from .rules import apply_activity_rules, monthly_revenue, stage_after_order_removed, today
 from .schemas import ActivityIn, ChangePasswordIn, CmsIn, LoginIn, OrderUpdateIn, ResellerIn, SettingsIn, StageIn, UserIn
 from .service import (
     activities_by_reseller,
@@ -70,6 +70,8 @@ async def update_user(uid: str, body: UserIn, admin: dict = Depends(require("adm
         raise HTTPException(400, "Tidak bisa menurunkan/menonaktifkan akun Anda sendiri")
     if body.password:
         upd["passwordHash"] = hash_password(body.password)
+    if await get_db().users.find_one({"email": body.email.lower(), "_id": {"$ne": uid}}):
+        raise HTTPException(409, "Email sudah dipakai user lain")
     res = await get_db().users.update_one({"_id": uid}, {"$set": upd})
     if not res.matched_count:
         raise HTTPException(404, "User tidak ditemukan")
@@ -100,12 +102,13 @@ async def list_resellers(_: dict = Depends(current_user)):
 
 @router.post("/resellers")
 async def create_reseller(body: ResellerIn, _: dict = Depends(require(*WRITE_ROLES))):
+    data = normalize_reseller(body.model_dump())
     # Pengaman klik ganda / data ganda: nama + no. WA yang sama tidak boleh dibuat dua kali.
-    dup = await get_db().resellers.find_one({"name": {"$regex": f"^{re.escape(body.name.strip())}$", "$options": "i"},
-                                             "phone": body.phone.strip()})
-    if dup:
-        raise HTTPException(409, f"Reseller \"{body.name}\" dengan no. WA yang sama sudah ada")
-    doc = {"_id": new_id(), **body.model_dump(), "createdAt": now_iso(), "updatedAt": now_iso()}
+    if data["phone"]:
+        dup = await get_db().resellers.find_one({"name": {"$regex": f"^{re.escape(data['name'])}$", "$options": "i"}, "phone": data["phone"]})
+        if dup:
+            raise HTTPException(409, f"Reseller \"{data['name']}\" dengan no. WA yang sama sudah ada")
+    doc = {"_id": new_id(), **data, "createdAt": now_iso(), "updatedAt": now_iso()}
     await get_db().resellers.insert_one(doc)
     return await enriched_reseller(doc["_id"])
 
@@ -123,11 +126,28 @@ async def get_reseller(rid: str, _: dict = Depends(current_user)):
 
 
 @router.put("/resellers/{rid}")
-async def update_reseller(rid: str, body: ResellerIn, _: dict = Depends(require(*WRITE_ROLES))):
-    res = await get_db().resellers.update_one({"_id": rid}, {"$set": {**body.model_dump(), "updatedAt": now_iso()}})
-    if not res.matched_count:
+async def update_reseller(rid: str, body: ResellerIn, user: dict = Depends(require(*WRITE_ROLES))):
+    r = await get_db().resellers.find_one({"_id": rid})
+    if not r:
         raise HTTPException(404, "Reseller tidak ditemukan")
+    data = normalize_reseller(body.model_dump())
+    await get_db().resellers.update_one({"_id": rid}, {"$set": {**data, "updatedAt": now_iso()}})
+    if data["stage"] != r.get("stage", "lead"):
+        await log_stage(rid, r.get("stage", "lead"), data["stage"], user["name"], auto=False)
     return await enriched_reseller(rid)
+
+
+def normalize_reseller(d: dict) -> dict:
+    d["name"] = d["name"].strip()
+    d["phone"] = re.sub(r"\D", "", d.get("phone") or "")
+    return d
+
+
+async def log_stage(rid: str, from_stage: str, to_stage: str, by: str, auto: bool, date_: str | None = None) -> None:
+    label = next(s["label"] for s in STAGES if s["id"] == to_stage)
+    await get_db().activities.insert_one({"_id": new_id(), "resellerId": rid, "type": "stage", "date": date_ or today().isoformat(),
+                                          "fromStage": from_stage, "toStage": to_stage, "auto": auto,
+                                          "note": ("Otomatis pindah ke tahap: " if auto else "Pindah ke tahap: ") + label, "by": by, "createdAt": now_iso()})
 
 
 @router.post("/resellers/{rid}/stage")
@@ -135,11 +155,10 @@ async def move_stage(rid: str, body: StageIn, user: dict = Depends(require(*WRIT
     r = await get_db().resellers.find_one({"_id": rid})
     if not r:
         raise HTTPException(404, "Reseller tidak ditemukan")
-    label = next(s["label"] for s in STAGES if s["id"] == body.stage)
+    if body.stage == r.get("stage", "lead"):
+        return await enriched_reseller(rid)
     await get_db().resellers.update_one({"_id": rid}, {"$set": {"stage": body.stage, "updatedAt": now_iso()}})
-    await get_db().activities.insert_one({"_id": new_id(), "resellerId": rid, "type": "stage", "date": today().isoformat(),
-                                          "fromStage": r.get("stage", "lead"), "toStage": body.stage, "auto": False,
-                                          "note": f"Pindah ke tahap: {label}", "by": user["name"], "createdAt": now_iso()})
+    await log_stage(rid, r.get("stage", "lead"), body.stage, user["name"], auto=False)
     return await enriched_reseller(rid)
 
 
@@ -185,10 +204,7 @@ async def create_activity(body: ActivityIn, user: dict = Depends(require(*WRITE_
     if changes:
         await get_db().resellers.update_one({"_id": body.resellerId}, {"$set": {**changes, "updatedAt": now_iso()}})
         if changes.get("stage") and changes["stage"] != r.get("stage"):
-            label = next(s["label"] for s in STAGES if s["id"] == changes["stage"])
-            await get_db().activities.insert_one({"_id": new_id(), "resellerId": body.resellerId, "type": "stage", "date": doc["date"],
-                                                  "fromStage": r.get("stage", "lead"), "toStage": changes["stage"], "auto": True,
-                                                  "note": f"Otomatis pindah ke tahap: {label}", "by": user["name"], "createdAt": now_iso()})
+            await log_stage(body.resellerId, r.get("stage", "lead"), changes["stage"], user["name"], auto=True, date_=doc["date"])
     return {"activity": public(doc), "reseller": await enriched_reseller(body.resellerId)}
 
 
@@ -224,6 +240,10 @@ async def update_order(aid: str, body: OrderUpdateIn, user: dict = Depends(requi
         raise HTTPException(403, "Status pesanan hanya bisa diubah oleh Admin, CRM, atau Gudang")
     if data.get("status") == "completed" and not (data.get("receivedDate") or a.get("receivedDate")):
         data["receivedDate"] = today().isoformat()
+    if "status" in data and data["status"] != "completed":
+        data["receivedDate"] = ""
+    if "date" in data and a.get("invoiceNo") and data["date"][:7] != a.get("date", "")[:7]:
+        raise HTTPException(422, "Tanggal pesanan tidak bisa dipindah ke bulan lain karena nomor invoice sudah terbit")
     if "qty" in data and data["qty"] <= 0:
         raise HTTPException(422, "Jumlah pack harus lebih dari 0")
     data["updatedAt"] = now_iso()
@@ -274,10 +294,22 @@ async def list_orders(month: str | None = None, status: str | None = None, _: di
 
 
 @router.delete("/activities/{aid}")
-async def delete_activity(aid: str, _: dict = Depends(require(*WRITE_ROLES))):
-    res = await get_db().activities.delete_one({"_id": aid})
-    if not res.deleted_count:
+async def delete_activity(aid: str, user: dict = Depends(require("admin", "crm"))):
+    a = await get_db().activities.find_one({"_id": aid})
+    if not a:
         raise HTTPException(404, "Aktivitas tidak ditemukan")
+    if a.get("type") == "stage":
+        raise HTTPException(403, "Riwayat tahap tidak bisa dihapus")
+    await get_db().activities.delete_one({"_id": aid})
+    if a.get("type") == "order":
+        r = await get_db().resellers.find_one({"_id": a["resellerId"]})
+        if r:
+            left = await get_db().activities.count_documents({"resellerId": a["resellerId"], "type": "order"})
+            changes = stage_after_order_removed(r, left)
+            if changes:
+                await get_db().resellers.update_one({"_id": r["_id"]}, {"$set": {**changes, "updatedAt": now_iso()}})
+                if changes.get("stage"):
+                    await log_stage(r["_id"], r.get("stage", "lead"), changes["stage"], user["name"], auto=True)
     return {"ok": True}
 
 

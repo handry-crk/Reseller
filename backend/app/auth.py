@@ -38,7 +38,10 @@ async def current_user(cred: HTTPAuthorizationCredentials | None = Depends(beare
         payload = jwt.decode(cred.credentials, JWT_SECRET, algorithms=["HS256"])
     except jwt.PyJWTError:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sesi tidak valid, silakan login ulang")
-    user = await get_db().users.find_one({"_id": payload["sub"]})
+    sub = payload.get("sub")
+    if not sub:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sesi tidak valid, silakan login ulang")
+    user = await get_db().users.find_one({"_id": sub})
     if not user or not user.get("active", True):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Akun tidak aktif")
     return user

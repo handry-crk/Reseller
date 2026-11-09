@@ -31,10 +31,10 @@ export default function FollowUp() {
           </tbody></table></div> : <Empty>Semua reseller pembeli sudah repeat & aktif.</Empty>}</div>
         <div className="card"><h3 className="card-title">Complaint / Feedback</h3><div className="hint">Complaint open dan riwayat yang sudah selesai</div>
           {complaints.length ? <div className="overflow-x-auto"><table className="table"><thead><tr><th>Tanggal</th><th>Reseller</th><th>Complaint</th><th>Status</th><th></th></tr></thead><tbody>
-            {complaints.sort((a, b) => (a.status === 'resolved') - (b.status === 'resolved')).map(a => <tr key={a.id}>
+            {[...complaints].sort((a, b) => (a.status === 'resolved') - (b.status === 'resolved')).map(a => <tr key={a.id}>
               <td>{a.date}</td><td><button className="link" onClick={() => openDetail(a.resellerId)}>{a.resellerName}</button></td><td>{a.note}</td>
               <td>{a.status === 'resolved' ? <span className="tag tag-good">resolved</span> : <span className="tag">open</span>}</td>
-              <td>{a.status !== 'resolved' && can.write && <button className="btn btn-sm" onClick={() => run(() => api(`/api/activities/${a.id}/resolve`, { method: 'POST' }), 'Complaint selesai').then(load)}>Selesai</button>}</td></tr>)}
+              <td>{a.status !== 'resolved' && can.write && <button className="btn btn-sm" onClick={() => run(() => api(`/api/activities/${a.id}/resolve`, { method: 'POST' }), 'Complaint selesai').then(load, () => {})}>Selesai</button>}</td></tr>)}
           </tbody></table></div> : <Empty>Belum ada complaint tercatat.</Empty>}</div>
       </div>
       <div className="card mt-4"><h3 className="card-title">Template Pesan WhatsApp</h3>

@@ -34,7 +34,7 @@ function Detail({ r, quick, setQuick, reload, onEdit, onClose, meta, run, can, s
   const idx = main.indexOf(r.stage); const next = idx >= 0 ? main[idx + 1] : null
   const cms = meta.cms
   const tierInfo = cms.tiers.find(t => t.name === r.tier)
-  const move = (stage) => run(() => api(`/api/resellers/${r.id}/stage`, { method: 'POST', body: { stage } }), 'Tahap diperbarui').then(reload)
+  const move = (stage) => run(() => api(`/api/resellers/${r.id}/stage`, { method: 'POST', body: { stage } }), 'Tahap diperbarui').then(reload, () => {})
   const guide = {
     education: cms.education.map(e => `• ${e.title}${e.link ? ` — ${e.link}` : ''}${e.description ? ` (${e.description})` : ''}`).join('\n') || 'Belum ada materi',
     program: cms.benefit + '\n\nKetentuan\n' + cms.terms,
@@ -63,7 +63,7 @@ function Detail({ r, quick, setQuick, reload, onEdit, onClose, meta, run, can, s
       </Section>}
       {quick?.type && <QuickAct r={r} type={quick.type} cms={cms} onDone={() => { setQuick(null); reload() }} onCancel={() => setQuick(null)} run={run} />}
       {quick === 'delete' && <Confirm title="Hapus reseller ini?" text="Semua riwayat aktivitasnya ikut terhapus." yesLabel="Ya, hapus" onNo={() => setQuick(null)}
-        onYes={() => run(() => api(`/api/resellers/${r.id}`, { method: 'DELETE' }), 'Reseller dihapus').then(onClose)} />}
+        onYes={() => run(() => api(`/api/resellers/${r.id}`, { method: 'DELETE' }), 'Reseller dihapus').then(onClose, () => {})} />}
       {guide && <Section title={'Panduan Tahap: ' + stageOf(r.stage).label}><div className="pre">{guide}</div></Section>}
       {tierInfo && <div className="note mt-3">Benefit tier <b>{tierInfo.name}</b>: {tierInfo.benefit}. Pack 30 hari terakhir: <b>{fmtN(r.packsLast30)}</b>.</div>}
       {r.nextFollowUp && <div className="note mt-2">Jadwal follow-up: <b>{r.nextFollowUp}</b></div>}
@@ -81,10 +81,10 @@ function Detail({ r, quick, setQuick, reload, onEdit, onClose, meta, run, can, s
               <span className="font-bold">{TYPE_LABEL[a.type] || a.type}</span>
               {a.type === 'order' && <> · {fmtN(a.qty)} pack · {fmtRp(a.amount)} <span className={'tag ml-1 ' + (ORDER_CLS[a.status] || '')}>{(meta.orderStatuses || []).find(x => x.id === a.status)?.label || a.status}</span>
                 <div className="text-[11px] text-ink-3 font-mono">{a.invoiceNo || ''}{a.receivedDate ? ` · diterima ${a.receivedDate}` : ''} <Link className="link font-medium font-sans ml-1" to={`/invoice/${a.id}`}>invoice</Link>
-                  {can.orderStatus && a.status !== 'completed' && <button className="link font-medium font-sans ml-2" onClick={() => run(() => api(`/api/activities/${a.id}`, { method: 'PUT', body: { status: a.status === 'to_ship' ? 'shipping' : 'completed' } }), 'Status pesanan diperbarui').then(reload)}>→ {a.status === 'to_ship' ? 'Shipping' : 'Completed'}</button>}</div></>}
-              {a.type === 'complaint' && (a.status === 'resolved' ? <span className="tag tag-good ml-1">resolved</span> : <><span className="tag ml-1">open</span>{can.write && <button className="link ml-2 text-xs" onClick={() => run(() => api(`/api/activities/${a.id}/resolve`, { method: 'POST' }), 'Complaint selesai').then(reload)}>tandai selesai</button>}</>)}
+                  {can.orderStatus && a.status !== 'completed' && <button className="link font-medium font-sans ml-2" onClick={() => run(() => api(`/api/activities/${a.id}`, { method: 'PUT', body: { status: a.status === 'to_ship' ? 'shipping' : 'completed' } }), 'Status pesanan diperbarui').then(reload, () => {})}>→ {a.status === 'to_ship' ? 'Shipping' : 'Completed'}</button>}</div></>}
+              {a.type === 'complaint' && (a.status === 'resolved' ? <span className="tag tag-good ml-1">resolved</span> : <><span className="tag ml-1">open</span>{can.write && <button className="link ml-2 text-xs" onClick={() => run(() => api(`/api/activities/${a.id}/resolve`, { method: 'POST' }), 'Complaint selesai').then(reload, () => {})}>tandai selesai</button>}</>)}
               {a.note && <div className="text-ink-2">{a.note}</div>}
-              <div className="text-[11px] text-ink-3">{a.by && `oleh ${a.by}`} {can.write && <button className="link font-medium text-[11px] ml-2" onClick={() => run(() => api(`/api/activities/${a.id}`, { method: 'DELETE' }), 'Aktivitas dihapus').then(reload)}>hapus</button>}</div>
+              <div className="text-[11px] text-ink-3">{a.by && `oleh ${a.by}`} {can.deleteReseller && a.type !== 'stage' && <button className="link font-medium text-[11px] ml-2" onClick={() => run(() => api(`/api/activities/${a.id}`, { method: 'DELETE' }), 'Aktivitas dihapus').then(reload, () => {})}>hapus</button>}</div>
             </div>
           </div>
         ))}
@@ -110,11 +110,11 @@ function QuickAct({ r, type, cms, onDone, onCancel, run }) {
     <div className="card border-brick mt-4">
       <h4 className="text-[13px] font-bold mb-2">Catat {TYPE_LABEL[type]}</h4>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="lbl">{type === 'order' ? 'Tanggal pesanan' : 'Tanggal'}</label><input className="inp" type="date" value={f.date} onChange={set('date')} /></div>
+        <div><label className="lbl">{type === 'order' ? 'Tanggal pesanan' : 'Tanggal'}</label><input className="inp" type="date" value={f.date} max={today()} onChange={set('date')} /></div>
         {type === 'order' && <><div><label className="lbl">Jumlah pesanan (pack)</label><input className="inp" type="number" min="1" value={f.qty} onChange={e => setF({ ...f, qty: e.target.value, amount: cms.pricePerPack ? cms.pricePerPack * (+e.target.value || 0) : f.amount })} /></div>
           <div><label className="lbl">Total harga dibayar (Rp)</label><input className="inp" type="number" min="0" value={f.amount} onChange={set('amount')} /></div>
           <div><label className="lbl">Status pesanan</label><select className="inp" value={f.status} onChange={set('status')}><option value="to_ship">To Ship</option><option value="shipping">Shipping</option><option value="completed">Completed</option></select></div>
-          <div><label className="lbl">Tanggal diterima (bila sudah)</label><input className="inp" type="date" value={f.receivedDate} onChange={set('receivedDate')} /></div></>}
+          <div><label className="lbl">Tanggal diterima (bila sudah)</label><input className="inp" type="date" value={f.receivedDate} max={today()} onChange={set('receivedDate')} /></div></>}
         {type === 'followup' && <div><label className="lbl">Follow-up berikutnya</label><input className="inp" type="date" value={f.nextFollowUp} onChange={set('nextFollowUp')} /></div>}
         <div className="col-span-2"><label className="lbl">Catatan</label><textarea className="inp min-h-[70px]" placeholder={ph} value={f.note} onChange={set('note')} /></div>
       </div>

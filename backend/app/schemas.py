@@ -1,13 +1,19 @@
 from datetime import date
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .config import ROLES
+from .config import ROLES, TZ
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+
+def _today() -> date:
+    return datetime.now(ZoneInfo(TZ)).date()
 from .defaults import ORDER_STATUS_IDS, STAGE_IDS
 
 Role = Literal["admin", "crm", "cs", "gudang", "viewer"]
-ActivityType = Literal["order", "followup", "complaint", "education", "stage"]
+ActivityType = Literal["order", "followup", "complaint", "education"]  # "stage" hanya dibuat sistem
 
 
 # ---------- Auth / Users ----------
@@ -101,11 +107,18 @@ class ActivityIn(BaseModel):
             raise ValueError("Status pesanan tidak dikenal")
         return v
 
-    @field_validator("date", "nextFollowUp", "receivedDate")
+    @field_validator("nextFollowUp")
     @classmethod
-    def _d(cls, v: str) -> str:
+    def _fu(cls, v: str) -> str:
         if v:
             date.fromisoformat(v)
+        return v
+
+    @field_validator("date", "receivedDate")
+    @classmethod
+    def _d(cls, v: str) -> str:
+        if v and date.fromisoformat(v) > _today():
+            raise ValueError("Tanggal tidak boleh di masa depan")
         return v
 
 
@@ -128,8 +141,8 @@ class OrderUpdateIn(BaseModel):
     @field_validator("date", "receivedDate")
     @classmethod
     def _d(cls, v):
-        if v:
-            date.fromisoformat(v)
+        if v and date.fromisoformat(v) > _today():
+            raise ValueError("Tanggal tidak boleh di masa depan")
         return v
 
 
@@ -180,3 +193,9 @@ class SettingsIn(BaseModel):
     churnDays: int = Field(default=90, ge=1)
     followUpDays: int = Field(default=14, ge=0)
     company: CompanyIn = CompanyIn()
+
+    @model_validator(mode="after")
+    def _order(self):
+        if self.pasifDays >= self.churnDays:
+            raise ValueError("Hari pasif harus lebih kecil dari hari churn")
+        return self

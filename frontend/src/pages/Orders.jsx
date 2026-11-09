@@ -29,9 +29,9 @@ export default function Orders() {
   const statuses = d.statuses
   const setSt = async (o, st) => {
     setBusy(o.id)
-    try { await run(() => api(`/api/activities/${o.id}`, { method: 'PUT', body: { status: st } }), `${o.invoiceNo || 'Pesanan'} → ${statuses.find(x => x.id === st)?.label}`); await load() } catch {} finally { setBusy('') }
+    try { await run(() => api(`/api/activities/${o.id}`, { method: 'PUT', body: { status: st } }), `${o.invoiceNo || 'Pesanan'} → ${statuses.find(x => x.id === st)?.label}`) } catch {} finally { setBusy('') }
   }
-  const setRecv = async (o, v) => { if (v === (o.receivedDate || '')) return; try { await run(() => api(`/api/activities/${o.id}`, { method: 'PUT', body: { receivedDate: v } }), 'Tanggal diterima disimpan'); await load() } catch {} }
+  const setRecv = async (o, v) => { if (v === (o.receivedDate || '')) return; try { await run(() => api(`/api/activities/${o.id}`, { method: 'PUT', body: { receivedDate: v } }), 'Tanggal diterima disimpan') } catch {} }
   const months = d.monthly.map(m => m.month)
   const totalMonth = rows.reduce((s, o) => s + (o.amount || 0), 0)
   const maxRev = Math.max(1, ...d.monthly.map(m => m.revenue))
@@ -63,7 +63,7 @@ export default function Orders() {
             <td>{can.orderStatus
               ? <select className="inp !w-auto !py-1 text-xs" value={o.status} disabled={busy === o.id} onChange={e => setSt(o, e.target.value)}>{statuses.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
               : <OrderStatusTag s={o.status} statuses={statuses} />}</td>
-            <td>{can.orderStatus ? <input className="inp !w-auto !py-1 text-xs" type="date" defaultValue={o.receivedDate || ''} onBlur={e => setRecv(o, e.target.value)} /> : (o.receivedDate || '-')}</td>
+            <td>{can.orderStatus ? <input key={o.id + (o.receivedDate || '')} className="inp !w-auto !py-1 text-xs" type="date" defaultValue={o.receivedDate || ''} max={meta.today} onChange={e => setRecv(o, e.target.value)} /> : (o.receivedDate || '-')}</td>
             <td className="max-w-[220px] truncate" title={o.note}>{o.note}</td>
             <td><Link className="btn btn-sm" to={`/invoice/${o.id}`}>Invoice</Link></td></tr>)}
         </tbody></table></div> : <Empty>Tidak ada pesanan pada filter ini.</Empty>}

@@ -2,13 +2,13 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .auth import hash_password
-from .config import ADMIN_EMAIL, ADMIN_NAME, ADMIN_PASSWORD, FRONTEND_URL
+from .config import ADMIN_EMAIL, ADMIN_NAME, ADMIN_PASSWORD, FRONTEND_URL, JWT_SECRET
 from .db import ensure_indexes, get_db
 from .routes import router
 from .service import new_id, now_iso
@@ -25,6 +25,8 @@ async def ensure_admin() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    if JWT_SECRET == "ganti-secret-ini-di-production" and os.getenv("ALLOW_DEFAULT_SECRET") != "1":
+        raise RuntimeError("JWT_SECRET belum diisi. Set variabel JWT_SECRET (string acak panjang) di Railway/Render.")
     # Jangan matikan server bila database belum siap: healthcheck tetap jalan, error tampil di log.
     try:
         await ensure_indexes()
@@ -54,11 +56,13 @@ async def health():
             app.state.db_ok = ok = True
         except Exception as exc:  # noqa: BLE001
             app.state.db_error = f"{type(exc).__name__}: {exc}"
-    return {"ok": True, "database": "terhubung" if ok else "GAGAL: " + getattr(app.state, "db_error", "")}
+    body = {"ok": ok, "database": "terhubung" if ok else "GAGAL: " + getattr(app.state, "db_error", "")}
+    return JSONResponse(status_code=200 if ok else 503, content=body)
 
 
 @app.exception_handler(Exception)
-async def unhandled(_: Request, exc: Exception):
+async def unhandled(request: Request, exc: Exception):
+    logging.exception("Unhandled error on %s %s", request.method, request.url.path)
     return JSONResponse(status_code=500, content={"detail": f"Terjadi kesalahan server: {type(exc).__name__}"})
 
 
@@ -68,7 +72,11 @@ if os.path.isdir(STATIC_DIR):
 
     @app.get("/{path:path}")
     async def spa(path: str):
-        file = os.path.join(STATIC_DIR, path)
-        if path and os.path.isfile(file):
+        if path.startswith("api/"):
+            raise HTTPException(404, "Endpoint tidak ditemukan")
+        # Hanya file di dalam folder static yang boleh dilayani (cegah path traversal ke kode sumber).
+        base = os.path.realpath(STATIC_DIR)
+        file = os.path.realpath(os.path.join(base, path))
+        if path and file.startswith(base + os.sep) and os.path.isfile(file) and not file.endswith(os.sep + "index.html"):
             return FileResponse(file)
-        return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+        return FileResponse(os.path.join(base, "index.html"))
