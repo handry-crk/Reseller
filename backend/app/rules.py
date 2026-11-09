@@ -101,3 +101,21 @@ def apply_activity_rules(reseller: dict, activity: dict, orders_after: int, sett
         if cur == "repeat":
             changes["stage"] = "education"
     return changes
+
+
+def monthly_revenue(orders: list[dict], months: int = 12, ref: date | None = None) -> list[dict]:
+    """Revenue & pack per bulan untuk `months` bulan terakhir (termasuk bulan berjalan), urut lama → baru."""
+    ref = ref or today()
+    out = []
+    y, m = ref.year, ref.month
+    keys = []
+    for _ in range(months):
+        keys.append(f"{y:04d}-{m:02d}")
+        m -= 1
+        if m == 0:
+            m, y = 12, y - 1
+    for k in reversed(keys):
+        rows = [o for o in orders if o.get("type") == "order" and o.get("date", "").startswith(k)]
+        out.append({"month": k, "orders": len(rows), "packs": sum(int(o.get("qty") or 0) for o in rows),
+                    "revenue": sum(int(o.get("amount") or 0) for o in rows)})
+    return out

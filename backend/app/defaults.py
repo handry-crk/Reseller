@@ -22,7 +22,22 @@ DEFAULT_SETTINGS = {
     "pasifDays": 30,
     "churnDays": 90,
     "followUpDays": 14,
+    "company": {
+        "name": "PT Citarasa Kuliner Indonesia (Cimol Bojot AA)",
+        "address": "Bandung, Jawa Barat",
+        "phone": "",
+        "email": "",
+        "bank": "",
+        "invoiceNote": "Terima kasih telah menjadi mitra reseller Cimol Bojot AA.",
+    },
 }
+
+ORDER_STATUSES = [
+    {"id": "to_ship", "label": "To Ship"},
+    {"id": "shipping", "label": "Shipping"},
+    {"id": "completed", "label": "Completed"},
+]
+ORDER_STATUS_IDS = [s["id"] for s in ORDER_STATUSES]
 
 DEFAULT_CMS = {
     "tiers": [

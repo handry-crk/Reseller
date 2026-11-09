@@ -19,12 +19,26 @@ def public(doc: dict) -> dict:
     d = dict(doc)
     d["id"] = d.pop("_id")
     d.pop("passwordHash", None)
+    if d.get("type") == "order":
+        d.setdefault("status", "completed")  # pesanan lama sebelum fitur status
+        d.setdefault("receivedDate", "")
+        d.setdefault("invoiceNo", "")
     return d
+
+
+async def next_invoice_no(month_key: str) -> str:
+    """Nomor invoice berurutan per bulan: INV-YYYYMM-0001."""
+    key = "invoice-" + month_key
+    doc = await get_db().config.find_one_and_update({"_id": key}, {"$inc": {"seq": 1}}, upsert=True, return_document=True)
+    seq = int(doc["seq"]) if doc and "seq" in doc else 1
+    return f"INV-{month_key.replace('-', '')}-{seq:04d}"
 
 
 async def get_settings() -> dict:
     doc = await get_db().config.find_one({"_id": "settings"})
-    return {**DEFAULT_SETTINGS, **(doc or {})} if doc else dict(DEFAULT_SETTINGS)
+    merged = {**DEFAULT_SETTINGS, **(doc or {})}
+    merged["company"] = {**DEFAULT_SETTINGS["company"], **((doc or {}).get("company") or {})}
+    return merged
 
 
 async def get_cms() -> dict:

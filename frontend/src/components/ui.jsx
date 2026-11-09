@@ -10,10 +10,10 @@ export const TierTag = ({ t, auto }) => t ? <span className={'tier ' + (TIER_BG[
 export function Bar({ label, value, max, extra }) {
   const pct = max ? Math.round((value / max) * 100) : 0
   return (
-    <div className="grid grid-cols-[150px_1fr_56px] items-center gap-2.5 text-[12.5px]" title={`${label}: ${value}`}>
+    <div className="grid grid-cols-[150px_1fr_minmax(56px,auto)] items-center gap-2.5 text-[12.5px]" title={`${label}: ${value}`}>
       <div className="truncate text-ink-2">{label}</div>
       <div className="h-3.5 rounded bg-cream-dark overflow-hidden"><div className="h-full bg-brick rounded-r min-w-[2px] transition-all" style={{ width: pct + '%' }} /></div>
-      <div className="text-right font-bold tabular-nums">{extra ?? fmtN(value)}</div>
+      <div className="text-right font-bold tabular-nums whitespace-nowrap text-xs">{extra ?? fmtN(value)}</div>
     </div>
   )
 }

@@ -1,10 +1,12 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from .auth import CMS_ROLES, WRITE_ROLES, current_user, hash_password, make_token, require, verify_password
 from .db import get_db
-from .defaults import STAGES
-from .rules import apply_activity_rules, today
-from .schemas import ActivityIn, ChangePasswordIn, CmsIn, LoginIn, ResellerIn, SettingsIn, StageIn, UserIn
+from .defaults import ORDER_STATUSES, STAGES
+from .rules import apply_activity_rules, monthly_revenue, today
+from .schemas import ActivityIn, ChangePasswordIn, CmsIn, LoginIn, OrderUpdateIn, ResellerIn, SettingsIn, StageIn, UserIn
 from .service import (
     activities_by_reseller,
     enriched_reseller,
@@ -12,9 +14,12 @@ from .service import (
     get_cms,
     get_settings,
     new_id,
+    next_invoice_no,
     now_iso,
     public,
 )
+
+ORDER_STATUS_ROLES = ("admin", "crm", "gudang")
 
 router = APIRouter(prefix="/api")
 
@@ -82,7 +87,7 @@ async def delete_user(uid: str, admin: dict = Depends(require("admin"))):
 # ================= META =================
 @router.get("/meta")
 async def meta(_: dict = Depends(current_user)):
-    return {"stages": STAGES, "settings": await get_settings(), "cms": await get_cms(), "today": today().isoformat()}
+    return {"stages": STAGES, "orderStatuses": ORDER_STATUSES, "settings": await get_settings(), "cms": await get_cms(), "today": today().isoformat()}
 
 
 # ================= RESELLERS =================
@@ -95,6 +100,11 @@ async def list_resellers(_: dict = Depends(current_user)):
 
 @router.post("/resellers")
 async def create_reseller(body: ResellerIn, _: dict = Depends(require(*WRITE_ROLES))):
+    # Pengaman klik ganda / data ganda: nama + no. WA yang sama tidak boleh dibuat dua kali.
+    dup = await get_db().resellers.find_one({"name": {"$regex": f"^{re.escape(body.name.strip())}$", "$options": "i"},
+                                             "phone": body.phone.strip()})
+    if dup:
+        raise HTTPException(409, f"Reseller \"{body.name}\" dengan no. WA yang sama sudah ada")
     doc = {"_id": new_id(), **body.model_dump(), "createdAt": now_iso(), "updatedAt": now_iso()}
     await get_db().resellers.insert_one(doc)
     return await enriched_reseller(doc["_id"])
@@ -108,6 +118,7 @@ async def get_reseller(rid: str, _: dict = Depends(current_user)):
     acts = (await activities_by_reseller([rid])).get(rid, [])
     acts.sort(key=lambda a: (a.get("date", ""), a.get("createdAt", "")), reverse=True)
     r["activities"] = acts
+    r["monthly"] = monthly_revenue(acts)
     return r
 
 
@@ -163,6 +174,10 @@ async def create_activity(body: ActivityIn, user: dict = Depends(require(*WRITE_
            "qty": body.qty, "amount": body.amount, "note": body.note, "by": user["name"], "createdAt": now_iso()}
     if body.type == "complaint":
         doc["status"] = "open"
+    if body.type == "order":
+        doc["status"] = body.status or "to_ship"
+        doc["receivedDate"] = body.receivedDate
+        doc["invoiceNo"] = await next_invoice_no(doc["date"][:7])
     await get_db().activities.insert_one(doc)
     orders_after = await get_db().activities.count_documents({"resellerId": body.resellerId, "type": "order"})
     changes = apply_activity_rules(r, {**doc, "nextFollowUp": body.nextFollowUp}, orders_after, await get_settings())
@@ -178,6 +193,59 @@ async def resolve_complaint(aid: str, _: dict = Depends(require(*WRITE_ROLES))):
     if not res.matched_count:
         raise HTTPException(404, "Complaint tidak ditemukan")
     return {"ok": True}
+
+
+@router.get("/activities/{aid}")
+async def get_activity(aid: str, _: dict = Depends(current_user)):
+    """Detail satu aktivitas (dipakai halaman invoice), termasuk data reseller & perusahaan."""
+    a = await get_db().activities.find_one({"_id": aid})
+    if not a:
+        raise HTTPException(404, "Aktivitas tidak ditemukan")
+    r = await get_db().resellers.find_one({"_id": a["resellerId"]})
+    return {"activity": public(a), "reseller": public(r) if r else None, "company": (await get_settings())["company"],
+            "cms": {"pricePerPack": (await get_cms()).get("pricePerPack", 0)}}
+
+
+@router.put("/activities/{aid}")
+async def update_order(aid: str, body: OrderUpdateIn, user: dict = Depends(require(*WRITE_ROLES, "gudang"))):
+    a = await get_db().activities.find_one({"_id": aid, "type": "order"})
+    if not a:
+        raise HTTPException(404, "Pesanan tidak ditemukan")
+    data = {k: v for k, v in body.model_dump().items() if v is not None}
+    if user["role"] == "gudang":
+        data = {k: v for k, v in data.items() if k in ("status", "receivedDate")}
+    if "status" in data and user["role"] not in ORDER_STATUS_ROLES:
+        raise HTTPException(403, "Status pesanan hanya bisa diubah oleh Admin, CRM, atau Gudang")
+    if data.get("status") == "completed" and not (data.get("receivedDate") or a.get("receivedDate")):
+        data["receivedDate"] = today().isoformat()
+    if "qty" in data and data["qty"] <= 0:
+        raise HTTPException(422, "Jumlah pack harus lebih dari 0")
+    data["updatedAt"] = now_iso()
+    data["updatedBy"] = user["name"]
+    await get_db().activities.update_one({"_id": aid}, {"$set": data})
+    return public(await get_db().activities.find_one({"_id": aid}))
+
+
+@router.get("/orders")
+async def list_orders(month: str | None = None, status: str | None = None, _: dict = Depends(current_user)):
+    """Daftar pesanan untuk monitoring gudang/admin. month = YYYY-MM."""
+    q: dict = {"type": "order"}
+    if status:
+        q["status"] = status if status != "completed" else {"$in": ["completed", None]}
+    rows = [public(a) async for a in get_db().activities.find(q)]
+    if month:
+        rows = [a for a in rows if a.get("date", "").startswith(month)]
+    names = {r["_id"]: r async for r in get_db().resellers.find({}, {"name": 1, "phone": 1, "area": 1, "pic": 1})}
+    for a in rows:
+        r = names.get(a["resellerId"], {})
+        a["resellerName"] = r.get("name", "(terhapus)")
+        a["resellerPhone"] = r.get("phone", "")
+        a["resellerArea"] = r.get("area", "")
+        a["pic"] = r.get("pic", "")
+    rows.sort(key=lambda a: (a.get("date", ""), a.get("createdAt", "")), reverse=True)
+    all_orders = [public(a) async for a in get_db().activities.find({"type": "order"})]
+    counts = {st["id"]: sum(1 for a in all_orders if a.get("status") == st["id"]) for st in ORDER_STATUSES}
+    return {"orders": rows, "counts": counts, "monthly": monthly_revenue(all_orders), "statuses": ORDER_STATUSES}
 
 
 @router.delete("/activities/{aid}")
@@ -211,7 +279,7 @@ async def read_settings(_: dict = Depends(current_user)):
 async def write_settings(body: SettingsIn, _: dict = Depends(require("admin"))):
     data = body.model_dump()
     for k in ("pic", "channel", "area"):
-        data[k] = [s.strip() for s in data[k] if s.strip()]
+        data[k] = [x.strip() for x in data[k] if x.strip()]
     await get_db().config.update_one({"_id": "settings"}, {"$set": data}, upsert=True)
     return await get_settings()
 
@@ -268,7 +336,9 @@ async def dashboard(period: str = "all", _: dict = Depends(current_user)):
         elif r["status"] == "Pasif":
             todo.append({"id": r["id"], "name": r["name"], "pic": r.get("pic", ""), "kind": "pasif", "text": f"Pasif {r['daysSinceLastOrder']} hari, perlu reaktivasi"})
     top = sorted(buyers, key=lambda r: r["totalRevenue"], reverse=True)[:10]
-    return {"kpi": kpi, "stages": stage_counts, "funnel": funnel, "tiers": tiers,
+    order_counts = {st["id"]: sum(1 for a in all_acts if a.get("status") == st["id"]) for st in ORDER_STATUSES}
+    return {"kpi": kpi, "stages": stage_counts, "funnel": funnel, "tiers": tiers, "monthly": monthly_revenue(all_acts),
+            "orderCounts": order_counts,
             "pics": sorted(pics.values(), key=lambda p: p["resellers"], reverse=True), "todo": todo,
             "top": [{k: r[k] for k in ("id", "name", "area", "tier", "ordersCount", "totalPacks", "totalRevenue", "lastOrderDate")} for r in top],
             "today": t}
@@ -299,8 +369,11 @@ async def seed(_: dict = Depends(require("admin"))):
         for k in range(n_orders):
             qty = 10 + k * 5 + i * 3
             d = (t - timedelta(days=(n_orders - 1 - k) * 9 + 2 + i)).isoformat()
+            last = k == n_orders - 1
             await get_db().activities.insert_one({"_id": new_id(), "resellerId": rid, "type": "order", "date": d, "qty": qty,
-                                                  "amount": qty * price, "note": "Cimol Bojot AA Frozen", "by": "seed", "createdAt": now_iso()})
+                                                  "amount": qty * price, "note": "Cimol Bojot AA Frozen", "by": "seed", "createdAt": now_iso(),
+                                                  "status": "to_ship" if last and i % 3 == 0 else "shipping" if last and i % 3 == 1 else "completed",
+                                                  "receivedDate": "" if last and i % 3 != 2 else d, "invoiceNo": await next_invoice_no(d[:7])})
         if i == 4:
             await get_db().activities.insert_one({"_id": new_id(), "resellerId": rid, "type": "complaint", "date": t.isoformat(), "status": "open",
                                                   "note": "Packaging penyok saat pengiriman", "by": "seed", "createdAt": now_iso()})

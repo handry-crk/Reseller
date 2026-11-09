@@ -113,3 +113,43 @@ async def test_seed_and_dashboard(client):
     assert dash["kpi"]["total"] == 8 and dash["kpi"]["revenue"] > 0
     assert sum(s["count"] for s in dash["stages"]) == 8
     assert dash["funnel"][0]["count"] == 8
+
+
+@pytest.mark.asyncio
+async def test_duplicate_reseller_rejected(client):
+    await make_reseller(client, name="Toko Dobel", phone="0811")
+    r = await client.post("/api/resellers", json={"name": "toko dobel", "phone": "0811"})
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_order_invoice_status_and_gudang(client):
+    r = await make_reseller(client)
+    res = await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "qty": 20, "amount": 700000, "date": "2026-11-09"})
+    a = res.json()["activity"]
+    assert a["status"] == "to_ship" and a["invoiceNo"] == "INV-202611-0001"
+    res = await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "qty": 5, "amount": 175000, "date": "2026-11-10"})
+    assert res.json()["activity"]["invoiceNo"] == "INV-202611-0002"
+    # gudang: hanya boleh status & tanggal diterima
+    await client.post("/api/users", json={"email": "gudang@crk.local", "name": "Gudang", "role": "gudang", "password": "gudang123"})
+    tok = (await client.post("/api/auth/login", json={"email": "gudang@crk.local", "password": "gudang123"})).json()["token"]
+    h = {"Authorization": "Bearer " + tok}
+    res = await client.put(f"/api/activities/{a['id']}", json={"status": "shipping", "qty": 999}, headers=h)
+    assert res.status_code == 200 and res.json()["status"] == "shipping" and res.json()["qty"] == 20
+    res = await client.put(f"/api/activities/{a['id']}", json={"status": "completed"}, headers=h)
+    assert res.json()["receivedDate"] != ""
+    assert (await client.post("/api/resellers", json={"name": "X"}, headers=h)).status_code == 403
+    # monitoring
+    o = (await client.get("/api/orders?month=2026-11", headers=h)).json()
+    assert len(o["orders"]) == 2 and o["counts"]["completed"] == 1 and o["counts"]["to_ship"] == 1
+    inv = (await client.get(f"/api/activities/{a['id']}", headers=h)).json()
+    assert inv["activity"]["invoiceNo"] == "INV-202611-0001" and inv["company"]["name"]
+
+
+@pytest.mark.asyncio
+async def test_monthly_revenue_per_reseller(client):
+    r = await make_reseller(client)
+    await order(client, r["id"], 10, days_ago=0)
+    await order(client, r["id"], 10, days_ago=0)
+    d = (await client.get(f"/api/resellers/{r['id']}")).json()
+    assert len(d["monthly"]) == 12 and d["monthly"][-1]["revenue"] == 700000 and d["monthly"][-1]["orders"] == 2

@@ -4,9 +4,9 @@ from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 from .config import ROLES
-from .defaults import STAGE_IDS
+from .defaults import ORDER_STATUS_IDS, STAGE_IDS
 
-Role = Literal["admin", "crm", "cs", "viewer"]
+Role = Literal["admin", "crm", "cs", "gudang", "viewer"]
 ActivityType = Literal["order", "followup", "complaint", "education", "stage"]
 
 
@@ -91,10 +91,43 @@ class ActivityIn(BaseModel):
     amount: int = 0
     note: str = ""
     nextFollowUp: str = ""  # hanya untuk followup
+    receivedDate: str = ""  # hanya untuk order
+    status: str = ""  # hanya untuk order: to_ship | shipping | completed
 
-    @field_validator("date", "nextFollowUp")
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str) -> str:
+        if v and v not in ORDER_STATUS_IDS:
+            raise ValueError("Status pesanan tidak dikenal")
+        return v
+
+    @field_validator("date", "nextFollowUp", "receivedDate")
     @classmethod
     def _d(cls, v: str) -> str:
+        if v:
+            date.fromisoformat(v)
+        return v
+
+
+class OrderUpdateIn(BaseModel):
+    """Perubahan pesanan setelah dibuat. Role gudang hanya boleh status & receivedDate."""
+    status: Optional[str] = None
+    receivedDate: Optional[str] = None
+    date: Optional[str] = None
+    qty: Optional[int] = None
+    amount: Optional[int] = None
+    note: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v):
+        if v is not None and v not in ORDER_STATUS_IDS:
+            raise ValueError("Status pesanan tidak dikenal")
+        return v
+
+    @field_validator("date", "receivedDate")
+    @classmethod
+    def _d(cls, v):
         if v:
             date.fromisoformat(v)
         return v
@@ -130,6 +163,15 @@ class CmsIn(BaseModel):
     pricePerPack: int = 0
 
 
+class CompanyIn(BaseModel):
+    name: str = ""
+    address: str = ""
+    phone: str = ""
+    email: str = ""
+    bank: str = ""
+    invoiceNote: str = ""
+
+
 class SettingsIn(BaseModel):
     pic: list[str]
     channel: list[str]
@@ -137,3 +179,4 @@ class SettingsIn(BaseModel):
     pasifDays: int = Field(default=30, ge=1)
     churnDays: int = Field(default=90, ge=1)
     followUpDays: int = Field(default=14, ge=0)
+    company: CompanyIn = CompanyIn()

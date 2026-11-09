@@ -46,6 +46,8 @@ export function StoreProvider({ children }) {
     cms: ['admin', 'crm'].includes(user?.role),
     admin: user?.role === 'admin',
     deleteReseller: ['admin', 'crm'].includes(user?.role),
+    orderStatus: ['admin', 'crm', 'gudang'].includes(user?.role),
+    gudang: user?.role === 'gudang',
   }), [user])
 
   const stageOf = useCallback((id) => meta?.stages.find(s => s.id === id) || meta?.stages[0] || { id, label: id }, [meta])

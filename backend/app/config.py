@@ -10,4 +10,4 @@ ADMIN_NAME = os.getenv("ADMIN_NAME", "Admin CRK")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "*")
 TZ = os.getenv("TZ", "Asia/Jakarta")
 
-ROLES = ["admin", "crm", "cs", "viewer"]
+ROLES = ["admin", "crm", "cs", "gudang", "viewer"]

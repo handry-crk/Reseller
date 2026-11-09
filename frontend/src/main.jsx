@@ -7,7 +7,9 @@ import { StoreProvider, useStore } from './lib/store'
 import Cms from './pages/Cms'
 import Dashboard from './pages/Dashboard'
 import FollowUp from './pages/FollowUp'
+import Invoice from './pages/Invoice'
 import Login from './pages/Login'
+import Orders from './pages/Orders'
 import Pipeline from './pages/Pipeline'
 import Resellers from './pages/Resellers'
 import Settings from './pages/Settings'
@@ -19,8 +21,10 @@ function App() {
   if (!meta) return <div className="min-h-screen grid place-items-center text-ink-3">Memuat data…</div>
   return (
     <Routes>
+      <Route path="/invoice/:id" element={<Invoice />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/pesanan" element={<Orders />} />
         <Route path="/pipeline" element={<Pipeline />} />
         <Route path="/reseller" element={<Resellers />} />
         <Route path="/followup" element={<FollowUp />} />

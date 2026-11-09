@@ -3,7 +3,7 @@
 Dashboard + CRM + CMS untuk alur reseller **Cimol Bojot AA** (PT Citarasa Kuliner Indonesia).
 Mengikuti flowchart: Leads → Form → Pembelian Minimal Order → Repeat Order → Product Education → Benefit Program → Tier List → Support Mitra → Retention, dengan jalur samping Follow-Up/Reaktivasi dan log Complaint.
 
-**Stack:** React 18 + Vite + Tailwind (frontend) · FastAPI + MongoDB (backend) · JWT auth dengan role Admin / CRM / CS / Viewer.
+**Stack:** React 18 + Vite + Tailwind (frontend) · FastAPI + MongoDB (backend) · JWT auth dengan role Admin / CRM / CS / Gudang / Viewer.
 
 ```
 reseller/
@@ -23,6 +23,7 @@ reseller/
 
 ## Fitur
 - **Dashboard**: KPI (total/aktif/pasif/churn, repeat order rate, revenue, AOV, complaint open), kotak alur per tahap, funnel, distribusi tier, performa PIC, "Perlu Tindakan", top 10 reseller; filter periode.
+- **Pesanan**: monitoring pesanan masuk (Admin/Gudang): nomor invoice otomatis `INV-YYYYMM-NNNN`, status To Ship → Shipping → Completed, tanggal pesan & diterima, invoice resmi siap cetak/PDF (`/invoice/:id`), revenue per bulan.
 - **Pipeline**: kanban per tahap, drag-and-drop untuk memindahkan tahap.
 - **Data Reseller**: cari/filter, form, export CSV, drawer detail (KPI, aksi alur, panduan tahap dari CMS, riwayat aktivitas).
 - **Follow-Up & Complaint**: daftar reaktivasi, complaint open → resolved, template WA dengan tombol Copy dan "Buka WA".
@@ -71,4 +72,4 @@ Kode ini milik Anda. Buka repo di Claude Code (atau editor apa pun) dan minta pe
 Setiap push ke `main` akan otomatis di-deploy ulang oleh Railway/Vercel.
 
 ## API ringkas
-`POST /api/auth/login` · `GET /api/meta` · `GET|POST /api/resellers` · `GET|PUT|DELETE /api/resellers/{id}` · `POST /api/resellers/{id}/stage` · `GET|POST /api/activities` · `POST /api/activities/{id}/resolve` · `DELETE /api/activities/{id}` · `GET|PUT /api/cms` · `GET|PUT /api/settings` · `GET /api/dashboard?period=30|90|365|all` · `GET|POST|PUT|DELETE /api/users` · `POST /api/admin/seed` · `POST /api/admin/wipe`
+`POST /api/auth/login` · `GET /api/meta` · `GET|POST /api/resellers` · `GET|PUT|DELETE /api/resellers/{id}` · `POST /api/resellers/{id}/stage` · `GET|POST /api/activities` · `GET|PUT /api/activities/{id}` (detail invoice / ubah status pesanan) · `GET /api/orders?month=YYYY-MM&status=` · `POST /api/activities/{id}/resolve` · `DELETE /api/activities/{id}` · `GET|PUT /api/cms` · `GET|PUT /api/settings` · `GET /api/dashboard?period=30|90|365|all` · `GET|POST|PUT|DELETE /api/users` · `POST /api/admin/seed` · `POST /api/admin/wipe`

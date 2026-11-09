@@ -2,7 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useStore } from '../lib/store'
 
 const NAV = [
-  ['/', 'Dashboard'], ['/pipeline', 'Pipeline Alur'], ['/reseller', 'Data Reseller'],
+  ['/', 'Dashboard'], ['/pesanan', 'Pesanan'], ['/pipeline', 'Pipeline Alur'], ['/reseller', 'Data Reseller'],
   ['/followup', 'Follow-Up & Complaint'], ['/cms', 'CMS Program'], ['/pengaturan', 'Pengaturan'],
 ]
 

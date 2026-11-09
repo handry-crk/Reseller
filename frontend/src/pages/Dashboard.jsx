@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { PageHead } from '../components/Layout'
 import { Bar, Empty, Kpi, TierTag } from '../components/ui'
+import { Link } from 'react-router-dom'
 import { api, fmtN, fmtRp } from '../lib/api'
 import { useStore } from '../lib/store'
 import { useDrawer } from '../lib/useDrawer'
@@ -58,6 +59,15 @@ export default function Dashboard() {
           </tbody></table></div> : <Empty>Tidak ada tindakan tertunda</Empty>}</div>
         <div className="card"><h3 className="card-title">Performa PIC</h3><div className="hint">Reseller & repeat order per penanggung jawab</div>
           <div className="flex flex-col gap-2">{d.pics.length ? d.pics.map(p => <Bar key={p.pic} label={p.pic} value={p.resellers} max={picMax} extra={`${p.repeat} repeat`} />) : <Empty>Belum ada data</Empty>}</div></div>
+      </div>
+      <div className="grid lg:grid-cols-[1fr_2fr] gap-4 mt-4">
+        <div className="card"><h3 className="card-title">Status Pesanan</h3><div className="hint">Monitoring gudang, semua periode</div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            {[['to_ship', 'To Ship', 'tag-warn'], ['shipping', 'Shipping', ''], ['completed', 'Completed', 'tag-good']].map(([k, l, c]) => <div key={k} className="bg-white rounded-lg border border-line p-3"><div className="text-2xl font-extrabold text-brick tabular-nums">{fmtN(d.orderCounts?.[k])}</div><span className={'tag ' + c}>{l}</span></div>)}
+          </div>
+          <Link to="/pesanan" className="btn btn-sm mt-3">Buka halaman Pesanan →</Link></div>
+        <div className="card"><h3 className="card-title">Revenue per Bulan</h3><div className="hint">Total pembayaran reseller, 12 bulan terakhir</div>
+          <div className="flex flex-col gap-2">{(d.monthly || []).map(m => <Bar key={m.month} label={new Date(m.month + '-01T00:00:00').toLocaleDateString('id-ID', { month: 'short', year: '2-digit' })} value={m.revenue} max={Math.max(1, ...d.monthly.map(x => x.revenue))} extra={fmtRp(m.revenue)} />)}</div></div>
       </div>
       <div className="card mt-4"><h3 className="card-title">Top Reseller by Revenue</h3><div className="hint">10 reseller dengan total pembelian tertinggi</div>
         {d.top.length ? <div className="overflow-x-auto"><table className="table"><thead><tr><th>#</th><th>Reseller</th><th>Area</th><th>Tier</th><th className="num">Order</th><th className="num">Pack</th><th className="num">Revenue</th><th>Order Terakhir</th></tr></thead><tbody>

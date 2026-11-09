@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, fmtN, fmtRp, today } from '../lib/api'
 import { useStore } from '../lib/store'
-import { Confirm, Drawer, Section, Select, StatusTag, TierTag } from './ui'
+import { Bar, Confirm, Drawer, Section, Select, StatusTag, TierTag } from './ui'
+
+const ORDER_CLS = { to_ship: 'tag-warn', shipping: '', completed: 'tag-good' }
+const monthLabel = (k) => new Date(k + '-01T00:00:00').toLocaleDateString('id-ID', { month: 'short', year: '2-digit' })
 
 const TYPE_LABEL = { order: 'Order', followup: 'Follow-Up', complaint: 'Complaint', education: 'Edukasi', stage: 'Tahap' }
 
@@ -65,6 +69,9 @@ function Detail({ r, quick, setQuick, reload, onEdit, onClose, meta, run, can, s
       {r.nextFollowUp && <div className="note mt-2">Jadwal follow-up: <b>{r.nextFollowUp}</b></div>}
       {r.address && <Section title="Alamat"><div className="pre">{r.address}</div></Section>}
       {r.notes && <Section title="Catatan"><div className="pre">{r.notes}</div></Section>}
+      {r.ordersCount > 0 && <Section title="Revenue per Bulan">
+        <div className="flex flex-col gap-1.5">{(r.monthly || []).filter((m, i, arr) => m.revenue > 0 || i >= arr.length - 6).map(m => <Bar key={m.month} label={monthLabel(m.month)} value={m.revenue} max={Math.max(1, ...(r.monthly || []).map(x => x.revenue))} extra={`${fmtRp(m.revenue)} · ${fmtN(m.packs)} pack`} />)}</div>
+      </Section>}
       <Section title={`Riwayat Aktivitas (${r.activities.length})`}>
         {r.activities.length === 0 && <div className="text-ink-3 text-xs">Belum ada aktivitas</div>}
         {r.activities.map(a => (
@@ -72,7 +79,9 @@ function Detail({ r, quick, setQuick, reload, onEdit, onClose, meta, run, can, s
             <div className="text-ink-3 tabular-nums">{a.date}</div>
             <div>
               <span className="font-bold">{TYPE_LABEL[a.type] || a.type}</span>
-              {a.type === 'order' && ` · ${fmtN(a.qty)} pack · ${fmtRp(a.amount)}`}
+              {a.type === 'order' && <> · {fmtN(a.qty)} pack · {fmtRp(a.amount)} <span className={'tag ml-1 ' + (ORDER_CLS[a.status] || '')}>{(meta.orderStatuses || []).find(x => x.id === a.status)?.label || a.status}</span>
+                <div className="text-[11px] text-ink-3 font-mono">{a.invoiceNo || ''}{a.receivedDate ? ` · diterima ${a.receivedDate}` : ''} <Link className="link font-medium font-sans ml-1" to={`/invoice/${a.id}`}>invoice</Link>
+                  {can.orderStatus && a.status !== 'completed' && <button className="link font-medium font-sans ml-2" onClick={() => run(() => api(`/api/activities/${a.id}`, { method: 'PUT', body: { status: a.status === 'to_ship' ? 'shipping' : 'completed' } }), 'Status pesanan diperbarui').then(reload)}>→ {a.status === 'to_ship' ? 'Shipping' : 'Completed'}</button>}</div></>}
               {a.type === 'complaint' && (a.status === 'resolved' ? <span className="tag tag-good ml-1">resolved</span> : <><span className="tag ml-1">open</span>{can.write && <button className="link ml-2 text-xs" onClick={() => run(() => api(`/api/activities/${a.id}/resolve`, { method: 'POST' }), 'Complaint selesai').then(reload)}>tandai selesai</button>}</>)}
               {a.note && <div className="text-ink-2">{a.note}</div>}
               <div className="text-[11px] text-ink-3">{a.by && `oleh ${a.by}`} {can.write && <button className="link font-medium text-[11px] ml-2" onClick={() => run(() => api(`/api/activities/${a.id}`, { method: 'DELETE' }), 'Aktivitas dihapus').then(reload)}>hapus</button>}</div>
@@ -87,24 +96,30 @@ function Detail({ r, quick, setQuick, reload, onEdit, onClose, meta, run, can, s
 const Mini = ({ l, v, s }) => <div className="card p-3"><div className="text-xs font-bold">{l}</div><div className="text-2xl font-extrabold text-brick leading-none my-1.5 tabular-nums">{v}</div><div className="text-[11px] text-ink-2">{s}</div></div>
 
 function QuickAct({ r, type, cms, onDone, onCancel, run }) {
-  const [f, setF] = useState({ date: today(), qty: cms.minRepeatOrder || '', amount: cms.pricePerPack && cms.minRepeatOrder ? cms.pricePerPack * cms.minRepeatOrder : '', note: '', nextFollowUp: '' })
+  const [busy, setBusy] = useState(false)
+  const [f, setF] = useState({ date: today(), qty: cms.minRepeatOrder || '', amount: cms.pricePerPack && cms.minRepeatOrder ? cms.pricePerPack * cms.minRepeatOrder : '', note: '', nextFollowUp: '', receivedDate: '', status: 'to_ship' })
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })
-  const submit = () => {
-    const body = { resellerId: r.id, type, date: f.date, note: f.note, qty: +f.qty || 0, amount: +f.amount || 0, nextFollowUp: f.nextFollowUp }
-    run(() => api('/api/activities', { method: 'POST', body }), 'Aktivitas tersimpan').then(onDone).catch(() => {})
+  const submit = async () => {
+    if (busy) return
+    setBusy(true)
+    const body = { resellerId: r.id, type, date: f.date, note: f.note, qty: +f.qty || 0, amount: +f.amount || 0, nextFollowUp: f.nextFollowUp, receivedDate: type === 'order' ? f.receivedDate : '', status: type === 'order' ? f.status : '' }
+    try { await run(() => api('/api/activities', { method: 'POST', body }), type === 'order' ? 'Pesanan tersimpan, invoice dibuat' : 'Aktivitas tersimpan'); onDone() } catch {} finally { setBusy(false) }
   }
   const ph = { complaint: 'Isi complaint / feedback dari reseller', order: 'Produk / varian / catatan packing', followup: 'Hasil follow-up', education: 'Materi yang diberikan' }[type]
   return (
     <div className="card border-brick mt-4">
       <h4 className="text-[13px] font-bold mb-2">Catat {TYPE_LABEL[type]}</h4>
       <div className="grid grid-cols-2 gap-3">
-        <div><label className="lbl">Tanggal</label><input className="inp" type="date" value={f.date} onChange={set('date')} /></div>
-        {type === 'order' && <><div><label className="lbl">Jumlah pack</label><input className="inp" type="number" min="1" value={f.qty} onChange={e => setF({ ...f, qty: e.target.value, amount: cms.pricePerPack ? cms.pricePerPack * (+e.target.value || 0) : f.amount })} /></div>
-          <div><label className="lbl">Nilai order (Rp)</label><input className="inp" type="number" min="0" value={f.amount} onChange={set('amount')} /></div></>}
+        <div><label className="lbl">{type === 'order' ? 'Tanggal pesanan' : 'Tanggal'}</label><input className="inp" type="date" value={f.date} onChange={set('date')} /></div>
+        {type === 'order' && <><div><label className="lbl">Jumlah pesanan (pack)</label><input className="inp" type="number" min="1" value={f.qty} onChange={e => setF({ ...f, qty: e.target.value, amount: cms.pricePerPack ? cms.pricePerPack * (+e.target.value || 0) : f.amount })} /></div>
+          <div><label className="lbl">Total harga dibayar (Rp)</label><input className="inp" type="number" min="0" value={f.amount} onChange={set('amount')} /></div>
+          <div><label className="lbl">Status pesanan</label><select className="inp" value={f.status} onChange={set('status')}><option value="to_ship">To Ship</option><option value="shipping">Shipping</option><option value="completed">Completed</option></select></div>
+          <div><label className="lbl">Tanggal diterima (bila sudah)</label><input className="inp" type="date" value={f.receivedDate} onChange={set('receivedDate')} /></div></>}
         {type === 'followup' && <div><label className="lbl">Follow-up berikutnya</label><input className="inp" type="date" value={f.nextFollowUp} onChange={set('nextFollowUp')} /></div>}
         <div className="col-span-2"><label className="lbl">Catatan</label><textarea className="inp min-h-[70px]" placeholder={ph} value={f.note} onChange={set('note')} /></div>
       </div>
-      <div className="flex gap-2 mt-3"><button className="btn btn-primary btn-sm" onClick={submit}>Simpan</button><button className="btn btn-ghost btn-sm" onClick={onCancel}>Batal</button></div>
+      {type === 'order' && <div className="text-[11px] text-ink-3 mt-2">Nomor invoice dibuat otomatis (INV-TAHUNBULAN-NOMOR) dan bisa dicetak dari riwayat atau halaman Pesanan.</div>}
+      <div className="flex gap-2 mt-3"><button className="btn btn-primary btn-sm" onClick={submit} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</button><button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={busy}>Batal</button></div>
     </div>
   )
 }
@@ -114,11 +129,16 @@ export function ResellerForm({ r, onSaved, onCancel }) {
   const s = meta.settings
   const [f, setF] = useState({ name: '', phone: '', area: s.area[0] || '', channel: s.channel[0] || '', pic: s.pic[0] || '', stage: 'lead', tierManual: '', address: '', nextFollowUp: '', notes: '', ...(r || {}) })
   const set = (k) => (v) => setF({ ...f, [k]: typeof v === 'string' ? v : v.target.value })
+  const [busy, setBusy] = useState(false)
   const submit = async (e) => {
     e.preventDefault()
+    if (busy) return
+    setBusy(true)
     const body = Object.fromEntries(['name', 'phone', 'area', 'channel', 'pic', 'stage', 'tierManual', 'address', 'nextFollowUp', 'notes'].map(k => [k, f[k] || '']))
-    const saved = await run(() => r?.id ? api(`/api/resellers/${r.id}`, { method: 'PUT', body }) : api('/api/resellers', { method: 'POST', body }), 'Reseller tersimpan').catch(() => null)
-    if (saved) onSaved(saved)
+    try {
+      const saved = await run(() => r?.id ? api(`/api/resellers/${r.id}`, { method: 'PUT', body }) : api('/api/resellers', { method: 'POST', body }), 'Reseller tersimpan').catch(() => null)
+      if (saved) onSaved(saved)
+    } finally { setBusy(false) }
   }
   return (
     <form onSubmit={submit}>
@@ -136,7 +156,7 @@ export function ResellerForm({ r, onSaved, onCancel }) {
         <div><label className="lbl">Jadwal follow-up</label><input className="inp" type="date" value={f.nextFollowUp} onChange={set('nextFollowUp')} /></div>
         <div className="col-span-2"><label className="lbl">Catatan</label><textarea className="inp min-h-[70px]" value={f.notes} onChange={set('notes')} /></div>
       </div>
-      <div className="flex gap-2 mt-4"><button className="btn btn-primary">Simpan</button><button type="button" className="btn btn-ghost" onClick={onCancel}>Batal</button></div>
+      <div className="flex gap-2 mt-4"><button className="btn btn-primary" disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan'}</button><button type="button" className="btn btn-ghost" onClick={onCancel} disabled={busy}>Batal</button></div>
     </form>
   )
 }
