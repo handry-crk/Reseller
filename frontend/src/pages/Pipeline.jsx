@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { PageHead } from '../components/Layout'
-import { api } from '../lib/api'
+import { api, fmtN } from '../lib/api'
+import { Empty, Select } from '../components/ui'
 import { useStore } from '../lib/store'
 import { useDrawer } from '../lib/useDrawer'
 
@@ -9,6 +10,7 @@ export default function Pipeline() {
   const { openDetail, openForm, drawer } = useDrawer()
   const [dragId, setDragId] = useState(null)
   const [over, setOver] = useState(null)
+  const [view, setView] = useState('board')
   const drop = (stage) => {
     const r = resellers.find(x => x.id === dragId)
     setOver(null); setDragId(null)
@@ -18,9 +20,14 @@ export default function Pipeline() {
   return (
     <>
       <PageHead title="<b>Pipeline</b> Alur Reseller" sub={can.write ? 'Seret kartu ke kolom lain untuk memindahkan tahap, atau klik untuk detail.' : 'Klik kartu untuk melihat detail.'}>
+        <div className="inline-flex rounded-full border border-brick overflow-hidden text-[13px] font-semibold">
+          <button className={'px-4 py-2 ' + (view === 'board' ? 'bg-brick text-cream' : 'text-brick')} onClick={() => setView('board')}>Papan</button>
+          <button className={'px-4 py-2 ' + (view === 'history' ? 'bg-brick text-cream' : 'text-brick')} onClick={() => setView('history')}>Riwayat Pipeline</button>
+        </div>
         {can.write && <button className="btn btn-primary" onClick={() => openForm()}>+ Reseller Baru</button>}
       </PageHead>
-      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
+      {view === 'history' && <History openDetail={openDetail} today={meta.today} stages={meta.stages} resellers={resellers} />}
+      <div className={'grid gap-3 ' + (view === 'board' ? '' : 'hidden')} style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))' }}>
         {meta.stages.map((s, i) => {
           const items = resellers.filter(r => (r.stage || 'lead') === s.id)
           return (
@@ -41,5 +48,31 @@ export default function Pipeline() {
       </div>
       {drawer}
     </>
+  )
+}
+
+
+const monthLabel = (k) => new Date(k + '-01T00:00:00').toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
+const lastMonths = (today, n = 12) => { const out = []; let [y, m] = today.slice(0, 7).split('-').map(Number); for (let i = 0; i < n; i++) { out.push(`${y}-${String(m).padStart(2, '0')}`); m--; if (m === 0) { m = 12; y-- } } return out }
+
+function History({ openDetail, today, stages, resellers }) {
+  const [month, setMonth] = useState(today.slice(0, 7))
+  const [d, setD] = useState(null)
+  useEffect(() => { api('/api/stage-history' + (month ? '?month=' + month : '')).then(setD).catch(() => {}) }, [month, resellers])
+  if (!d) return <Empty>Memuat riwayat…</Empty>
+  return (
+    <div className="card">
+      <div className="flex flex-wrap items-center gap-3 mb-3">
+        <h3 className="card-title">Riwayat Perpindahan Tahap</h3>
+        <Select options={[{ value: '', label: 'Semua periode' }, ...lastMonths(today).map(m => ({ value: m, label: monthLabel(m) }))]} value={month} onChange={setMonth} className="inp !w-auto" />
+        <span className="text-xs text-ink-3 ml-auto">{fmtN(d.total)} perpindahan · {fmtN(d.resellers)} reseller</span>
+      </div>
+      <div className="flex flex-wrap gap-1.5 mb-4">{d.perStage.filter(s => s.count).map(s => <span key={s.stage} className="tag">{s.label}: <b>{s.count}</b></span>)}</div>
+      {d.rows.length ? <div className="overflow-x-auto"><table className="table"><thead><tr><th>Tanggal</th><th>Reseller</th><th>Dari</th><th>Ke</th><th>Oleh</th><th>Jenis</th></tr></thead><tbody>
+        {d.rows.map(a => <tr key={a.id}><td className="whitespace-nowrap">{a.date}</td><td><button className="link" onClick={() => openDetail(a.resellerId)}>{a.resellerName}</button><br /><small className="text-ink-3">{a.pic}</small></td>
+          <td>{a.fromLabel ? <span className="tag tag-muted">{a.fromLabel}</span> : '-'}</td><td><span className="tag">{a.toLabel}</span></td><td>{a.by || '-'}</td>
+          <td>{a.auto ? <span className="tag tag-good">otomatis</span> : <span className="tag tag-muted">manual</span>}</td></tr>)}
+      </tbody></table></div> : <Empty>Belum ada perpindahan tahap pada periode ini.</Empty>}
+    </div>
   )
 }

@@ -138,6 +138,7 @@ async def move_stage(rid: str, body: StageIn, user: dict = Depends(require(*WRIT
     label = next(s["label"] for s in STAGES if s["id"] == body.stage)
     await get_db().resellers.update_one({"_id": rid}, {"$set": {"stage": body.stage, "updatedAt": now_iso()}})
     await get_db().activities.insert_one({"_id": new_id(), "resellerId": rid, "type": "stage", "date": today().isoformat(),
+                                          "fromStage": r.get("stage", "lead"), "toStage": body.stage, "auto": False,
                                           "note": f"Pindah ke tahap: {label}", "by": user["name"], "createdAt": now_iso()})
     return await enriched_reseller(rid)
 
@@ -183,6 +184,11 @@ async def create_activity(body: ActivityIn, user: dict = Depends(require(*WRITE_
     changes = apply_activity_rules(r, {**doc, "nextFollowUp": body.nextFollowUp}, orders_after, await get_settings())
     if changes:
         await get_db().resellers.update_one({"_id": body.resellerId}, {"$set": {**changes, "updatedAt": now_iso()}})
+        if changes.get("stage") and changes["stage"] != r.get("stage"):
+            label = next(s["label"] for s in STAGES if s["id"] == changes["stage"])
+            await get_db().activities.insert_one({"_id": new_id(), "resellerId": body.resellerId, "type": "stage", "date": doc["date"],
+                                                  "fromStage": r.get("stage", "lead"), "toStage": changes["stage"], "auto": True,
+                                                  "note": f"Otomatis pindah ke tahap: {label}", "by": user["name"], "createdAt": now_iso()})
     return {"activity": public(doc), "reseller": await enriched_reseller(body.resellerId)}
 
 
@@ -224,6 +230,25 @@ async def update_order(aid: str, body: OrderUpdateIn, user: dict = Depends(requi
     data["updatedBy"] = user["name"]
     await get_db().activities.update_one({"_id": aid}, {"$set": data})
     return public(await get_db().activities.find_one({"_id": aid}))
+
+
+@router.get("/stage-history")
+async def stage_history(month: str | None = None, _: dict = Depends(current_user)):
+    """Riwayat perpindahan tahap (manual & otomatis). month = YYYY-MM."""
+    labels = {s["id"]: s["label"] for s in STAGES}
+    rows = [public(a) async for a in get_db().activities.find({"type": "stage"})]
+    if month:
+        rows = [a for a in rows if a.get("date", "").startswith(month)]
+    names = {r["_id"]: r async for r in get_db().resellers.find({}, {"name": 1, "pic": 1})}
+    for a in rows:
+        r = names.get(a["resellerId"], {})
+        a["resellerName"] = r.get("name", "(terhapus)")
+        a["pic"] = r.get("pic", "")
+        a["fromLabel"] = labels.get(a.get("fromStage"), "") if a.get("fromStage") else ""
+        a["toLabel"] = labels.get(a.get("toStage"), "") or (a.get("note", "").split(": ", 1)[-1] if a.get("note") else "")
+    rows.sort(key=lambda a: (a.get("date", ""), a.get("createdAt", "")), reverse=True)
+    per_stage = [{"stage": s["id"], "label": s["label"], "count": sum(1 for a in rows if (a.get("toStage") or "") == s["id"] or (not a.get("toStage") and a["toLabel"] == s["label"])) } for s in STAGES]
+    return {"rows": rows, "perStage": per_stage, "total": len(rows), "resellers": len({a["resellerId"] for a in rows})}
 
 
 @router.get("/orders")

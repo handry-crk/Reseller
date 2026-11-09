@@ -153,3 +153,16 @@ async def test_monthly_revenue_per_reseller(client):
     await order(client, r["id"], 10, days_ago=0)
     d = (await client.get(f"/api/resellers/{r['id']}")).json()
     assert len(d["monthly"]) == 12 and d["monthly"][-1]["revenue"] == 700000 and d["monthly"][-1]["orders"] == 2
+
+
+@pytest.mark.asyncio
+async def test_stage_history(client):
+    r = await make_reseller(client)
+    await order(client, r["id"], 10)  # otomatis -> order1
+    await client.post(f"/api/resellers/{r['id']}/stage", json={"stage": "form"})  # manual
+    h = (await client.get("/api/stage-history?month=" + today().isoformat()[:7])).json()
+    assert h["total"] == 2 and h["resellers"] == 1
+    auto = [x for x in h["rows"] if x["auto"]][0]
+    assert auto["fromStage"] == "lead" and auto["toStage"] == "order1"
+    manual = [x for x in h["rows"] if not x["auto"]][0]
+    assert manual["fromStage"] == "order1" and manual["toLabel"] == "Form Pendaftaran"
