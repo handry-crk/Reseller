@@ -7,14 +7,14 @@ const NAV = [
 ]
 
 export default function Layout() {
-  const { user, logout, toast } = useStore()
+  const { user, logout, toast, meta } = useStore()
   return (
     <div className="grid md:grid-cols-[232px_1fr] min-h-screen">
       <aside className="bg-brick text-cream p-4 md:p-5 md:sticky md:top-0 md:h-screen flex md:flex-col flex-wrap gap-2 items-center md:items-stretch">
         <div className="font-extrabold text-lg leading-tight mr-auto md:mr-0 md:mb-3">CRK Reseller Hub<small className="block font-medium text-[11px] opacity-85 tracking-[.12em] uppercase mt-1">Cimol Bojot AA · CRM</small></div>
         <nav className="flex md:flex-col flex-wrap gap-0.5">
           {NAV.map(([to, label]) => (
-            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => 'px-3 py-2 rounded-lg text-[13.5px] font-semibold ' + (isActive ? 'bg-cream text-brick' : 'opacity-85 hover:bg-white/10 hover:opacity-100')}>{label}</NavLink>
+            <NavLink key={to} to={to} end={to === '/'} className={({ isActive }) => 'px-3 py-2 rounded-lg text-[13.5px] font-semibold ' + (isActive ? 'bg-cream text-brick' : 'opacity-85 hover:bg-white/10 hover:opacity-100')}>{label}{to === '/pengaturan' && meta?.pendingUsers > 0 && <span className="ml-2 inline-block min-w-[18px] rounded-full bg-[#FFD166] px-1.5 text-center text-[11px] font-bold text-ink" title="Pendaftar menunggu persetujuan">{meta.pendingUsers}</span>}</NavLink>
           ))}
         </nav>
         <div className="md:mt-auto text-[11px] opacity-90 md:pt-4">

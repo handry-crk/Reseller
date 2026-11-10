@@ -30,6 +30,16 @@ class UserOut(BaseModel):
     active: bool = True
 
 
+class RegisterIn(BaseModel):
+    name: str = Field(min_length=2, max_length=80)
+    email: str = Field(pattern=r"^[^@\s]+@[^@\s]+$")
+    password: str = Field(min_length=8, max_length=128)
+
+
+class ApproveIn(BaseModel):
+    role: Role = "cs"
+
+
 class UserIn(BaseModel):
     email: str = Field(pattern=r"^[^@\s]+@[^@\s]+$")
     name: str = Field(min_length=1, max_length=80)
@@ -193,6 +203,7 @@ class SettingsIn(BaseModel):
     churnDays: int = Field(default=90, ge=1)
     followUpDays: int = Field(default=14, ge=0)
     company: CompanyIn = CompanyIn()
+    emailDomains: list[str] = ["citarasakuliner"]
 
     @model_validator(mode="after")
     def _order(self):

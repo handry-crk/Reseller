@@ -28,7 +28,8 @@ reseller/
 - **Data Reseller**: cari/filter, form, export CSV, drawer detail (KPI, aksi alur, panduan tahap dari CMS, riwayat aktivitas).
 - **Follow-Up & Complaint**: daftar reaktivasi, complaint open → resolved, template WA dengan tombol Copy dan "Buka WA".
 - **CMS Program**: tier list, product education, template pesan, benefit, ketentuan, support, minimal order & harga.
-- **Pengaturan**: PIC/channel/area, aturan hari pasif/churn/follow-up, manajemen pengguna, seed/wipe data.
+- **Daftar member** (`/daftar`): karyawan mendaftar sendiri dengan email perusahaan (domain diatur di Pengaturan, bawaan `citarasakuliner` = semua akhiran .com/.co.id/.id). Akun berstatus *pending* sampai Admin menyetujui dan memilih role.
+- **Pengaturan**: PIC/channel/area, aturan hari pasif/churn/follow-up, domain email member, persetujuan pendaftar, manajemen pengguna, seed/wipe data.
 
 ### Aturan otomatis (backend/app/rules.py)
 | Kejadian | Hasil |
@@ -72,4 +73,4 @@ Kode ini milik Anda. Buka repo di Claude Code (atau editor apa pun) dan minta pe
 Setiap push ke `main` akan otomatis di-deploy ulang oleh Railway/Vercel.
 
 ## API ringkas
-`POST /api/auth/login` · `GET /api/meta` · `GET|POST /api/resellers` · `GET|PUT|DELETE /api/resellers/{id}` · `POST /api/resellers/{id}/stage` · `GET|POST /api/activities` · `GET|PUT /api/activities/{id}` (detail invoice / ubah status pesanan) · `GET /api/orders?month=YYYY-MM&status=` · `POST /api/activities/{id}/resolve` · `DELETE /api/activities/{id}` · `GET|PUT /api/cms` · `GET|PUT /api/settings` · `GET /api/dashboard?period=30|90|365|all` · `GET|POST|PUT|DELETE /api/users` · `POST /api/admin/seed` · `POST /api/admin/wipe`
+`POST /api/auth/login` · `POST /api/auth/register` · `GET /api/auth/register-info` · `POST /api/users/{id}/approve` · `GET /api/meta` · `GET|POST /api/resellers` · `GET|PUT|DELETE /api/resellers/{id}` · `POST /api/resellers/{id}/stage` · `GET|POST /api/activities` · `GET|PUT /api/activities/{id}` (detail invoice / ubah status pesanan) · `GET /api/orders?month=YYYY-MM&status=` · `POST /api/activities/{id}/resolve` · `DELETE /api/activities/{id}` · `GET|PUT /api/cms` · `GET|PUT /api/settings` · `GET /api/dashboard?period=30|90|365|all` · `GET|POST|PUT|DELETE /api/users` · `POST /api/admin/seed` · `POST /api/admin/wipe`

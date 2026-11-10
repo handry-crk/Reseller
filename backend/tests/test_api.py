@@ -100,9 +100,9 @@ async def test_complaint_open_resolve(client):
 
 @pytest.mark.asyncio
 async def test_viewer_cannot_write(client):
-    u = await client.post("/api/users", json={"email": "v@crk.local", "name": "Viewer", "role": "viewer", "password": "viewer123"})
+    u = await client.post("/api/users", json={"email": "v@citarasakuliner.com", "name": "Viewer", "role": "viewer", "password": "viewer123"})
     assert u.status_code == 200
-    login = await client.post("/api/auth/login", json={"email": "v@crk.local", "password": "viewer123"})
+    login = await client.post("/api/auth/login", json={"email": "v@citarasakuliner.com", "password": "viewer123"})
     tok = login.json()["token"]
     res = await client.post("/api/resellers", json={"name": "X"}, headers={"Authorization": "Bearer " + tok})
     assert res.status_code == 403
@@ -135,8 +135,8 @@ async def test_order_invoice_status_and_gudang(client):
     res = await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "qty": 5, "amount": 175000, "date": "2026-11-10"})
     assert res.json()["activity"]["invoiceNo"] == "INV-202611-0002"
     # gudang: hanya boleh status & tanggal diterima
-    await client.post("/api/users", json={"email": "gudang@crk.local", "name": "Gudang", "role": "gudang", "password": "gudang123"})
-    tok = (await client.post("/api/auth/login", json={"email": "gudang@crk.local", "password": "gudang123"})).json()["token"]
+    await client.post("/api/users", json={"email": "gudang@citarasakuliner.com", "name": "Gudang", "role": "gudang", "password": "gudang123"})
+    tok = (await client.post("/api/auth/login", json={"email": "gudang@citarasakuliner.com", "password": "gudang123"})).json()["token"]
     h = {"Authorization": "Bearer " + tok}
     res = await client.put(f"/api/activities/{a['id']}", json={"status": "shipping", "qty": 999}, headers=h)
     assert res.status_code == 200 and res.json()["status"] == "shipping" and res.json()["qty"] == 20
@@ -204,3 +204,25 @@ async def test_spa_path_traversal_blocked(client):
     res = await client.get("/..%2fapp%2fconfig.py")
     assert res.status_code == 200 and "JWT_SECRET" not in res.text
     assert (await client.get("/api/tidak-ada")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_register_domain_and_approval(client):
+    anon = {"Authorization": ""}
+    r = await client.post("/api/auth/register", json={"name": "Budi", "email": "budi@gmail.com", "password": "rahasia123"}, headers=anon)
+    assert r.status_code == 422 and "citarasakuliner" in r.json()["detail"]
+    r = await client.post("/api/auth/register", json={"name": "Budi", "email": "Budi@CitarasaKuliner.co.id", "password": "rahasia123"}, headers=anon)
+    assert r.status_code == 200
+    assert (await client.post("/api/auth/register", json={"name": "Budi 2", "email": "budi@citarasakuliner.co.id", "password": "rahasia123"}, headers=anon)).status_code == 409
+    login = await client.post("/api/auth/login", json={"email": "budi@citarasakuliner.co.id", "password": "rahasia123"}, headers=anon)
+    assert login.status_code == 401 and "persetujuan" in login.json()["detail"]
+    assert (await client.get("/api/meta")).json()["pendingUsers"] == 1
+    uid = [u for u in (await client.get("/api/users")).json() if u["email"] == "budi@citarasakuliner.co.id"][0]["id"]
+    assert (await client.post(f"/api/users/{uid}/approve", json={"role": "gudang"})).status_code == 200
+    login = await client.post("/api/auth/login", json={"email": "budi@citarasakuliner.co.id", "password": "rahasia123"}, headers=anon)
+    assert login.status_code == 200 and login.json()["user"]["role"] == "gudang"
+    # domain lain yang mirip ditolak
+    assert (await client.post("/api/auth/register", json={"name": "Xx", "email": "x@citarasakuliner-palsu.com", "password": "rahasia123"}, headers=anon)).status_code == 422
+    assert (await client.post("/api/auth/register", json={"name": "Xx", "email": "x@evilcitarasakuliner.com", "password": "rahasia123"}, headers=anon)).status_code == 422
+    # admin juga wajib domain perusahaan untuk user baru
+    assert (await client.post("/api/users", json={"email": "luar@gmail.com", "name": "Luar", "role": "cs", "password": "abcdef"})).status_code == 422

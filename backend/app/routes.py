@@ -6,7 +6,7 @@ from .auth import CMS_ROLES, WRITE_ROLES, current_user, hash_password, make_toke
 from .db import get_db
 from .defaults import ORDER_STATUSES, STAGES
 from .rules import apply_activity_rules, monthly_revenue, stage_after_order_removed, today
-from .schemas import ActivityIn, ChangePasswordIn, CmsIn, LoginIn, OrderUpdateIn, ResellerIn, SettingsIn, StageIn, UserIn
+from .schemas import ApproveIn, RegisterIn, ActivityIn, ChangePasswordIn, CmsIn, LoginIn, OrderUpdateIn, ResellerIn, SettingsIn, StageIn, UserIn
 from .service import (
     activities_by_reseller,
     enriched_reseller,
@@ -30,9 +30,48 @@ async def login(body: LoginIn):
     user = await get_db().users.find_one({"email": body.email.lower()})
     if not user or not verify_password(body.password, user["passwordHash"]):
         raise HTTPException(401, "Email atau kata sandi salah")
+    if user.get("status") == "pending":
+        raise HTTPException(401, "Akun Anda menunggu persetujuan Admin. Hubungi Admin CRK untuk aktivasi.")
     if not user.get("active", True):
         raise HTTPException(401, "Akun dinonaktifkan")
     return {"token": make_token(user), "user": public(user)}
+
+
+def email_domain_ok(email: str, domains: list[str]) -> bool:
+    """Entri "citarasakuliner" cocok dengan citarasakuliner.com / .co.id / .id; entri berisi titik harus sama persis."""
+    dom = email.rsplit("@", 1)[-1].lower().strip()
+    for d in domains or []:
+        d = d.lower().strip().lstrip("@")
+        if not d:
+            continue
+        if dom == d or ("." not in d and dom.startswith(d + ".")):
+            return True
+    return False
+
+
+def domain_hint(domains: list[str]) -> str:
+    return ", ".join("@" + d.lstrip("@") + ("…" if "." not in d else "") for d in domains if d.strip()) or "(belum diatur)"
+
+
+@router.get("/auth/register-info")
+async def register_info():
+    """Info publik untuk halaman daftar: domain email yang diizinkan."""
+    return {"emailDomains": (await get_settings()).get("emailDomains", [])}
+
+
+@router.post("/auth/register")
+async def register(body: RegisterIn):
+    """Pendaftaran member baru. Akun dibuat nonaktif (pending) sampai disetujui Admin."""
+    email = body.email.lower().strip()
+    domains = (await get_settings()).get("emailDomains", [])
+    if not email_domain_ok(email, domains):
+        raise HTTPException(422, f"Pendaftaran hanya untuk email perusahaan ({domain_hint(domains)})")
+    if await get_db().users.find_one({"email": email}):
+        raise HTTPException(409, "Email sudah terdaftar. Silakan login, atau hubungi Admin bila lupa kata sandi.")
+    doc = {"_id": new_id(), "email": email, "name": body.name.strip(), "role": "viewer", "active": False, "status": "pending",
+           "passwordHash": hash_password(body.password), "createdAt": now_iso()}
+    await get_db().users.insert_one(doc)
+    return {"ok": True, "message": "Pendaftaran terkirim. Akun aktif setelah disetujui Admin."}
 
 
 @router.get("/auth/me")
@@ -55,17 +94,29 @@ async def list_users(_: dict = Depends(require("admin"))):
 async def create_user(body: UserIn, _: dict = Depends(require("admin"))):
     if not body.password:
         raise HTTPException(422, "Kata sandi wajib diisi untuk user baru")
+    domains = (await get_settings()).get("emailDomains", [])
+    if not email_domain_ok(body.email, domains):
+        raise HTTPException(422, f"Email user harus berdomain perusahaan ({domain_hint(domains)})")
     if await get_db().users.find_one({"email": body.email.lower()}):
         raise HTTPException(409, "Email sudah terdaftar")
     doc = {"_id": new_id(), "email": body.email.lower(), "name": body.name, "role": body.role, "active": body.active,
-           "passwordHash": hash_password(body.password), "createdAt": now_iso()}
+           "status": "approved", "passwordHash": hash_password(body.password), "createdAt": now_iso()}
     await get_db().users.insert_one(doc)
     return public(doc)
 
 
 @router.put("/users/{uid}")
 async def update_user(uid: str, body: UserIn, admin: dict = Depends(require("admin"))):
+    cur = await get_db().users.find_one({"_id": uid})
+    if not cur:
+        raise HTTPException(404, "User tidak ditemukan")
     upd = {"email": body.email.lower(), "name": body.name, "role": body.role, "active": body.active}
+    if body.active:
+        upd["status"] = "approved"
+    if upd["email"] != cur.get("email"):
+        domains = (await get_settings()).get("emailDomains", [])
+        if not email_domain_ok(upd["email"], domains):
+            raise HTTPException(422, f"Email user harus berdomain perusahaan ({domain_hint(domains)})")
     if uid == admin["_id"] and (body.role != "admin" or not body.active):
         raise HTTPException(400, "Tidak bisa menurunkan/menonaktifkan akun Anda sendiri")
     if body.password:
@@ -75,6 +126,16 @@ async def update_user(uid: str, body: UserIn, admin: dict = Depends(require("adm
     res = await get_db().users.update_one({"_id": uid}, {"$set": upd})
     if not res.matched_count:
         raise HTTPException(404, "User tidak ditemukan")
+    return public(await get_db().users.find_one({"_id": uid}))
+
+
+@router.post("/users/{uid}/approve")
+async def approve_user(uid: str, body: ApproveIn, admin: dict = Depends(require("admin"))):
+    res = await get_db().users.update_one({"_id": uid, "status": "pending"},
+                                          {"$set": {"status": "approved", "active": True, "role": body.role,
+                                                    "approvedBy": admin["name"], "approvedAt": now_iso()}})
+    if not res.matched_count:
+        raise HTTPException(404, "Pendaftar tidak ditemukan atau sudah diproses")
     return public(await get_db().users.find_one({"_id": uid}))
 
 
@@ -88,8 +149,10 @@ async def delete_user(uid: str, admin: dict = Depends(require("admin"))):
 
 # ================= META =================
 @router.get("/meta")
-async def meta(_: dict = Depends(current_user)):
-    return {"stages": STAGES, "orderStatuses": ORDER_STATUSES, "settings": await get_settings(), "cms": await get_cms(), "today": today().isoformat()}
+async def meta(user: dict = Depends(current_user)):
+    pending = await get_db().users.count_documents({"status": "pending"}) if user["role"] == "admin" else 0
+    return {"stages": STAGES, "orderStatuses": ORDER_STATUSES, "settings": await get_settings(), "cms": await get_cms(),
+            "today": today().isoformat(), "pendingUsers": pending}
 
 
 # ================= RESELLERS =================
@@ -337,6 +400,9 @@ async def write_settings(body: SettingsIn, _: dict = Depends(require("admin"))):
     data = body.model_dump()
     for k in ("pic", "channel", "area"):
         data[k] = [x.strip() for x in data[k] if x.strip()]
+    data["emailDomains"] = [d.strip().lower().lstrip("@") for d in data.get("emailDomains", []) if d.strip()]
+    if not data["emailDomains"]:
+        raise HTTPException(422, "Minimal satu domain email harus diisi")
     await get_db().config.update_one({"_id": "settings"}, {"$set": data}, upsert=True)
     return await get_settings()
 

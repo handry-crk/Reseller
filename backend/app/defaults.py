@@ -22,6 +22,9 @@ DEFAULT_SETTINGS = {
     "pasifDays": 30,
     "churnDays": 90,
     "followUpDays": 14,
+    # Domain email yang boleh mendaftar. Entri tanpa titik ("citarasakuliner") cocok dengan semua akhiran:
+    # citarasakuliner.com, citarasakuliner.co.id, dst.
+    "emailDomains": ["citarasakuliner"],
     "company": {
         "name": "PT Citarasa Kuliner Indonesia (Cimol Bojot AA)",
         "address": "Bandung, Jawa Barat",
