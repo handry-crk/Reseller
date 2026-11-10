@@ -38,6 +38,11 @@ async def login(body: LoginIn):
     return {"token": make_token(user), "user": public(user)}
 
 
+# Akhiran domain yang sah untuk entri tanpa titik: satu label TLD (com, id, net, …) atau
+# domain tingkat dua Indonesia (co.id, my.id, web.id, …). Mencegah citarasakuliner.com.evil.io.
+ID_SLD = {"co", "my", "web", "biz", "ac", "or", "sch", "net", "go", "ponpes", "desa"}
+
+
 def email_domain_ok(email: str, domains: list[str]) -> bool:
     """Entri "citarasakuliner" cocok dengan citarasakuliner.com / .co.id / .id; entri berisi titik harus sama persis."""
     dom = email.rsplit("@", 1)[-1].lower().strip()
@@ -45,8 +50,13 @@ def email_domain_ok(email: str, domains: list[str]) -> bool:
         d = d.lower().strip().lstrip("@")
         if not d:
             continue
-        if dom == d or ("." not in d and dom.startswith(d + ".")):
+        if dom == d:
             return True
+        if "." not in d and dom.startswith(d + "."):
+            rest = dom[len(d) + 1:].split(".")
+            if all(x.isalpha() and 2 <= len(x) <= 6 for x in rest) and (
+                    len(rest) == 1 or (len(rest) == 2 and rest[0] in ID_SLD and rest[1] == "id")):
+                return True
     return False
 
 

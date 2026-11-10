@@ -29,7 +29,7 @@ export default function Settings() {
   }
   return (
     <>
-      <PageHead title="<b>Pengaturan</b>" sub="Daftar PIC, channel, area, aturan status otomatis, dan pengguna.">
+      <PageHead title="<b>Pengaturan</b>" sub={can.admin ? "Daftar PIC, channel, area, aturan status otomatis, domain email, dan pengguna." : "Lihat pengaturan dan ganti kata sandi akun Anda."}>
         {!ro && <button className="btn btn-primary" onClick={save}>Simpan</button>}
       </PageHead>
       {can.admin && users.some(u => u.status === 'pending') && <div className="note mb-4 flex flex-wrap items-center gap-3"><span><b>{users.filter(u => u.status === 'pending').length} pendaftar baru</b> menunggu persetujuan Anda.</span><button className="btn btn-sm" onClick={() => document.getElementById('pengguna')?.scrollIntoView({ behavior: 'smooth' })}>Tinjau sekarang ↓</button></div>}

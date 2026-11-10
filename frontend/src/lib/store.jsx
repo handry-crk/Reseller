@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { api, getToken, setToken } from './api'
 
 const Ctx = createContext(null)
@@ -10,7 +10,8 @@ export function StoreProvider({ children }) {
   const [resellers, setResellers] = useState([])
   const [toast, setToast] = useState('')
 
-  const notify = useCallback((m) => { setToast(m); setTimeout(() => setToast(''), 2400) }, [])
+  const toastTimer = useRef(null)
+  const notify = useCallback((m) => { clearTimeout(toastTimer.current); setToast(m); toastTimer.current = setTimeout(() => setToast(''), m.startsWith('Gagal') ? 4500 : 2600) }, [])
 
   const refresh = useCallback(async () => {
     const [m, rs] = await Promise.all([api('/api/meta'), api('/api/resellers')])

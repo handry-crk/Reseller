@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect } from 'react'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useStore } from '../lib/store'
 
 const NAV = [
@@ -7,7 +8,17 @@ const NAV = [
 ]
 
 export default function Layout() {
-  const { user, logout, toast, meta } = useStore()
+  const { user, logout, toast, meta, refresh } = useStore()
+  const loc = useLocation()
+  // Muat ulang data saat pindah menu, saat tab kembali aktif, dan tiap 60 detik,
+  // supaya perubahan dari user lain (CS, Gudang) ikut terlihat tanpa reload halaman.
+  useEffect(() => { refresh().catch(() => {}) }, [loc.pathname]) // eslint-disable-line
+  useEffect(() => {
+    const onFocus = () => { if (document.visibilityState === 'visible') refresh().catch(() => {}) }
+    document.addEventListener('visibilitychange', onFocus)
+    const t = setInterval(onFocus, 60000)
+    return () => { document.removeEventListener('visibilitychange', onFocus); clearInterval(t) }
+  }, [refresh])
   return (
     <div className="grid md:grid-cols-[232px_1fr] min-h-screen">
       <aside className="bg-brick text-cream p-4 md:p-5 md:sticky md:top-0 md:h-screen flex md:flex-col flex-wrap gap-2 items-center md:items-stretch">
