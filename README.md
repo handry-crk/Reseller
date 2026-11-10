@@ -23,7 +23,7 @@ reseller/
 
 ## Fitur
 - **Dashboard**: KPI (total/aktif/pasif/churn, repeat order rate, revenue, AOV, complaint open), kotak alur per tahap, funnel, distribusi tier, performa PIC, "Perlu Tindakan", top 10 reseller; filter periode.
-- **Pesanan**: monitoring pesanan masuk (Admin/Gudang): nomor invoice otomatis `INV-YYYYMM-NNNN`, status To Ship → Shipping → Completed, tanggal pesan & diterima, invoice resmi siap cetak/PDF (`/invoice/:id`), revenue per bulan.
+- **Pesanan**: tombol **+ Pesanan Baru** (pilih reseller, lalu baris produk: nama produk dari katalog, jumlah pack, harga/pack; subtotal & total pack/total bayar dihitung otomatis dan dihitung ulang di server). Monitoring pesanan masuk (Admin/Gudang): nomor invoice otomatis `INV-YYYYMM-NNNN`, status To Ship → Shipping → Completed, tanggal pesan & diterima, invoice resmi siap cetak/PDF (`/invoice/:id`), revenue per bulan.
 - **Pipeline**: kanban per tahap, drag-and-drop untuk memindahkan tahap.
 - **Data Reseller**: cari/filter, form, export CSV, drawer detail (KPI, aksi alur, panduan tahap dari CMS, riwayat aktivitas).
 - **Follow-Up & Complaint**: daftar reaktivasi, complaint open → resolved, template WA dengan tombol Copy dan "Buka WA".
@@ -54,7 +54,7 @@ Login awal: `admin@crk.local` / `admin123` (ubah lewat env `ADMIN_EMAIL`/`ADMIN_
 
 Dengan MongoDB sungguhan: salin `.env.example` → `.env`, isi `MONGO_URL`, lalu `cd backend && uvicorn app.main:app --reload`.
 
-Tes backend: `cd backend && pytest`.
+Tes backend: `cd backend && pytest`. Tes E2E pesanan: jalankan server in-memory, lalu `node e2e/orders.e2e.cjs`.
 
 ## Deploy (paling sederhana: satu layanan)
 1. **MongoDB Atlas** (gratis): buat cluster M0, buat database user, Network Access → `0.0.0.0/0`, salin connection string → `MONGO_URL`.

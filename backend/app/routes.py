@@ -16,6 +16,7 @@ from .service import (
     new_id,
     next_invoice_no,
     now_iso,
+    price_items,
     public,
 )
 
@@ -251,6 +252,13 @@ async def create_activity(body: ActivityIn, user: dict = Depends(require(*WRITE_
     r = await get_db().resellers.find_one({"_id": body.resellerId})
     if not r:
         raise HTTPException(404, "Reseller tidak ditemukan")
+    items: list[dict] = []
+    if body.type == "order" and body.items:
+        try:
+            items, total_qty, total_amount = price_items([i.model_dump() for i in body.items], (await get_cms()).get("products", []))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        body.qty, body.amount = total_qty, total_amount  # total selalu dihitung server dari item
     if body.type == "order" and body.qty <= 0:
         raise HTTPException(422, "Jumlah pack harus lebih dari 0")
     doc = {"_id": new_id(), "resellerId": body.resellerId, "type": body.type, "date": body.date or today().isoformat(),
@@ -258,6 +266,7 @@ async def create_activity(body: ActivityIn, user: dict = Depends(require(*WRITE_
     if body.type == "complaint":
         doc["status"] = "open"
     if body.type == "order":
+        doc["items"] = items
         doc["status"] = body.status or "to_ship"
         doc["receivedDate"] = body.receivedDate
         doc["invoiceNo"] = await next_invoice_no(doc["date"][:7])
@@ -307,6 +316,15 @@ async def update_order(aid: str, body: OrderUpdateIn, user: dict = Depends(requi
         data["receivedDate"] = ""
     if "date" in data and a.get("invoiceNo") and data["date"][:7] != a.get("date", "")[:7]:
         raise HTTPException(422, "Tanggal pesanan tidak bisa dipindah ke bulan lain karena nomor invoice sudah terbit")
+    if "items" in data:
+        if not data["items"]:
+            raise HTTPException(422, "Pesanan minimal berisi satu produk")
+        try:
+            data["items"], data["qty"], data["amount"] = price_items(data["items"], (await get_cms()).get("products", []))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+    elif a.get("items") and ("qty" in data or "amount" in data):
+        raise HTTPException(422, "Pesanan berisi rincian produk: ubah lewat daftar produk, bukan total")
     if "qty" in data and data["qty"] <= 0:
         raise HTTPException(422, "Jumlah pack harus lebih dari 0")
     data["updatedAt"] = now_iso()
@@ -353,7 +371,16 @@ async def list_orders(month: str | None = None, status: str | None = None, _: di
     rows.sort(key=lambda a: (a.get("date", ""), a.get("createdAt", "")), reverse=True)
     all_orders = [public(a) async for a in get_db().activities.find({"type": "order"})]
     counts = {st["id"]: sum(1 for a in all_orders if a.get("status") == st["id"]) for st in ORDER_STATUSES}
-    return {"orders": rows, "counts": counts, "monthly": monthly_revenue(all_orders), "statuses": ORDER_STATUSES}
+    per_product: dict[str, dict] = {}
+    for a in rows:
+        lines = a.get("items") or [{"product": "(tanpa rincian produk)", "qty": a.get("qty", 0), "subtotal": a.get("amount", 0)}]
+        for it in lines:
+            p = per_product.setdefault(it["product"], {"product": it["product"], "packs": 0, "revenue": 0})
+            p["packs"] += int(it.get("qty") or 0)
+            p["revenue"] += int(it.get("subtotal") or 0)
+    return {"orders": rows, "counts": counts, "monthly": monthly_revenue(all_orders), "statuses": ORDER_STATUSES,
+            "products": sorted(per_product.values(), key=lambda p: p["packs"], reverse=True),
+            "totals": {"orders": len(rows), "packs": sum(a.get("qty", 0) for a in rows), "revenue": sum(a.get("amount", 0) for a in rows)}}
 
 
 @router.delete("/activities/{aid}")
@@ -386,6 +413,12 @@ async def read_cms(_: dict = Depends(current_user)):
 async def write_cms(body: CmsIn, _: dict = Depends(require(*CMS_ROLES))):
     data = body.model_dump()
     data["tiers"] = sorted(data["tiers"], key=lambda t: t["minPacks"])
+    seen = set()
+    for p in data.get("products", []):
+        p["name"] = p["name"].strip()
+        if p["name"].lower() in seen:
+            raise HTTPException(422, f"Produk \"{p['name']}\" tercantum dua kali")
+        seen.add(p["name"].lower())
     await get_db().config.update_one({"_id": "cms"}, {"$set": data}, upsert=True)
     return await get_cms()
 
@@ -475,7 +508,8 @@ async def seed(_: dict = Depends(require("admin"))):
 
     rnd = Random(7)
     settings, cms = await get_settings(), await get_cms()
-    price = cms.get("pricePerPack") or 35000
+    prods = cms.get("products") or []
+    price = (prods[0]["price"] if prods else cms.get("pricePerPack")) or 23800
     names = [("Toko Frozen Bu Rina", "Bandung", "WhatsApp"), ("Warung Dapur Kiki", "Cimahi", "Instagram"),
              ("Snack Corner Depok", "Jabodetabek", "Shopee"), ("Rere Frozen Food", "Bandung", "TikTok"),
              ("Kios Jajan Ceu Imas", "Bandung", "Walk-in"), ("Reseller Bekasi Asep", "Jabodetabek", "Referral"),
@@ -494,7 +528,8 @@ async def seed(_: dict = Depends(require("admin"))):
             d = (t - timedelta(days=(n_orders - 1 - k) * 9 + 2 + i)).isoformat()
             last = k == n_orders - 1
             await get_db().activities.insert_one({"_id": new_id(), "resellerId": rid, "type": "order", "date": d, "qty": qty,
-                                                  "amount": qty * price, "note": "Cimol Bojot AA Frozen", "by": "seed", "createdAt": now_iso(),
+                                                  "amount": qty * price, "note": "Data contoh", "by": "seed", "createdAt": now_iso(),
+                                                  "items": [{"product": prods[(i + k) % len(prods)]["name"], "qty": qty, "price": price, "subtotal": qty * price}] if prods else [],
                                                   "status": "to_ship" if last and i % 3 == 0 else "shipping" if last and i % 3 == 1 else "completed",
                                                   "receivedDate": "" if last and i % 3 != 2 else d, "invoiceNo": await next_invoice_no(d[:7])})
         if i == 4:

@@ -23,6 +23,7 @@ def public(doc: dict) -> dict:
         d.setdefault("status", "completed")  # pesanan lama sebelum fitur status
         d.setdefault("receivedDate", "")
         d.setdefault("invoiceNo", "")
+        d.setdefault("items", [])  # pesanan lama tanpa rincian produk
     return d
 
 
@@ -65,3 +66,24 @@ async def enriched_resellers(ids: list[str] | None = None) -> list[dict]:
 async def enriched_reseller(rid: str) -> dict | None:
     rows = await enriched_resellers([rid])
     return rows[0] if rows else None
+
+
+def price_items(items: list[dict], products: list[dict]) -> tuple[list[dict], int, int]:
+    """Validasi item pesanan terhadap katalog dan hitung subtotal, total pack, total harga di server.
+
+    Baris dengan produk & harga sama digabung. Kembalikan (items, total_qty, total_amount).
+    Melempar ValueError bila produk tidak ada di katalog.
+    """
+    names = {p["name"] for p in products}
+    merged: dict[tuple[str, int], int] = {}
+    order: list[tuple[str, int]] = []
+    for it in items:
+        if it["product"] not in names:
+            raise ValueError(f"Produk \"{it['product']}\" tidak ada di katalog")
+        key = (it["product"], int(it["price"]))
+        if key not in merged:
+            order.append(key)
+            merged[key] = 0
+        merged[key] += int(it["qty"])
+    out = [{"product": p, "qty": merged[(p, pr)], "price": pr, "subtotal": merged[(p, pr)] * pr} for p, pr in order]
+    return out, sum(i["qty"] for i in out), sum(i["subtotal"] for i in out)

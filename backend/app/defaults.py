@@ -63,5 +63,14 @@ DEFAULT_CMS = {
     "support": "• POSM (banner, stiker, price tag)\n• Materi konten IG/TikTok siap pakai\n• Training penyajian produk\n• Grup WA mitra reseller",
     "minFirstOrder": 10,
     "minRepeatOrder": 5,
-    "pricePerPack": 35000,
+    "pricePerPack": 23800,
+    # Katalog produk untuk input pesanan. Harga awal = harga reseller Rp23.800/pack
+    # (dokumen CRK Agen & Reseller Insight 2026); ubah di menu CMS Program.
+    "products": [
+        {"name": "Mozza Balado", "price": 23800},
+        {"name": "Mozza Ayam Bawang", "price": 23800},
+        {"name": "Mozza Asin Pedas", "price": 23800},
+        {"name": "Mozza BBQ", "price": 23800},
+        {"name": "Mozza Jagung Bakar", "price": 23800},
+    ],
 }

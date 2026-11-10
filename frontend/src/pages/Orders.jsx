@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHead } from '../components/Layout'
-import { Bar, Empty, Kpi, Select } from '../components/ui'
+import OrderForm from '../components/OrderForm'
+import { Bar, Drawer, Empty, Kpi, Select } from '../components/ui'
 import { api, fmtN, fmtRp } from '../lib/api'
 import { useStore } from '../lib/store'
 import { useDrawer } from '../lib/useDrawer'
@@ -22,6 +23,7 @@ export default function Orders() {
   const [q, setQ] = useState('')
   const [d, setD] = useState(null)
   const [busy, setBusy] = useState('')
+  const [creating, setCreating] = useState(false)
   const load = () => api(`/api/orders?month=${month}${status ? '&status=' + status : ''}`).then(setD).catch(() => {})
   useEffect(() => { load() }, [month, status, resellers]) // eslint-disable-line
   const rows = useMemo(() => (d?.orders || []).filter(o => !q || [o.resellerName, o.invoiceNo, o.note].join(' ').toLowerCase().includes(q.toLowerCase())), [d, q])
@@ -39,12 +41,13 @@ export default function Orders() {
     <>
       <PageHead title="<b>Pesanan</b> Reseller" sub="Monitoring pesanan masuk untuk Admin & Gudang: ubah status To Ship → Shipping → Completed, isi tanggal diterima, cetak invoice.">
         <Select options={months.slice().reverse().map(m => ({ value: m, label: monthLabel(m) }))} value={month} onChange={setMonth} />
+        {can.write && <button className="btn btn-primary" onClick={() => setCreating(true)}>+ Pesanan Baru</button>}
       </PageHead>
       <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
         <Kpi label="To Ship" value={fmtN(d.counts.to_ship)} sub="menunggu dikirim gudang (semua bulan)" />
         <Kpi label="Shipping" value={fmtN(d.counts.shipping)} sub="dalam pengiriman (semua bulan)" />
         <Kpi label="Completed" value={fmtN(d.counts.completed)} sub="sudah diterima reseller (semua bulan)" />
-        <Kpi label={`Revenue ${monthLabel(month)}`} value={fmtRp(totalMonth)} sub={`${fmtN(rows.length)} pesanan pada filter saat ini`} />
+        <Kpi label={`Revenue ${monthLabel(month)}`} value={fmtRp(totalMonth)} sub={`${fmtN(rows.length)} pesanan · ${fmtN(rows.reduce((s, o) => s + (o.qty || 0), 0))} pack pada filter ini`} />
       </div>
       <div className="card mt-4">
         <div className="flex flex-wrap gap-2 items-center mb-3 [&>*]:w-auto [&>*]:min-w-[150px]">
@@ -53,12 +56,12 @@ export default function Orders() {
           <span className="ml-auto text-xs text-ink-3 !min-w-0">{rows.length} pesanan</span>
         </div>
         {rows.length ? <div className="overflow-x-auto"><table className="table"><thead><tr>
-          <th>Invoice</th><th>Tgl Pesan</th><th>Reseller</th><th>Area</th><th className="num">Pack</th><th className="num">Dibayar</th><th>Status</th><th>Tgl Diterima</th><th>Catatan</th><th></th></tr></thead><tbody>
+          <th>Invoice</th><th>Tgl Pesan</th><th>Reseller</th><th>Produk</th><th className="num">Pack</th><th className="num">Dibayar</th><th>Status</th><th>Tgl Diterima</th><th>Catatan</th><th></th></tr></thead><tbody>
           {rows.map(o => <tr key={o.id}>
             <td className="font-mono text-xs whitespace-nowrap">{o.invoiceNo || '-'}</td>
             <td className="whitespace-nowrap">{o.date}</td>
             <td><button className="link" onClick={() => openDetail(o.resellerId)}>{o.resellerName}</button><br /><small className="text-ink-3">{o.pic}</small></td>
-            <td>{o.resellerArea || '-'}</td>
+            <td className="text-xs min-w-[150px]">{o.items?.length ? o.items.map(i => <div key={i.product + i.price}>{i.product} <b>×{fmtN(i.qty)}</b></div>) : <span className="text-ink-3">(tanpa rincian)</span>}</td>
             <td className="num">{fmtN(o.qty)}</td><td className="num whitespace-nowrap">{fmtRp(o.amount)}</td>
             <td>{can.orderStatus
               ? <select className="inp !w-auto !py-1 text-xs" value={o.status} disabled={busy === o.id} onChange={e => setSt(o, e.target.value)}>{statuses.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
@@ -68,9 +71,16 @@ export default function Orders() {
             <td><Link className="btn btn-sm" to={`/invoice/${o.id}`}>Invoice</Link></td></tr>)}
         </tbody></table></div> : <Empty>Tidak ada pesanan pada filter ini.</Empty>}
       </div>
+      <div className="card mt-4"><h3 className="card-title">Penjualan per Produk · {monthLabel(month)}</h3><div className="hint">Pack dan nilai per varian pada filter saat ini</div>
+        {d.products?.length ? <div className="flex flex-col gap-2">{d.products.map(p => <Bar key={p.product} label={p.product} value={p.packs} max={Math.max(1, ...d.products.map(x => x.packs))} extra={`${fmtN(p.packs)} pack · ${fmtRp(p.revenue)}`} />)}</div> : <Empty>Belum ada pesanan.</Empty>}</div>
       <div className="card mt-4"><h3 className="card-title">Revenue per Bulan</h3><div className="hint">Total pembayaran reseller 12 bulan terakhir</div>
         <div className="flex flex-col gap-2">{d.monthly.map(m => <Bar key={m.month} label={monthLabel(m.month)} value={m.revenue} max={maxRev} extra={`${fmtRp(m.revenue)} · ${fmtN(m.orders)} order`} />)}</div></div>
       {drawer}
+      <Drawer open={creating} onClose={() => setCreating(false)}>
+        <h2 className="text-2xl font-extrabold text-brick mb-1">Pesanan Baru</h2>
+        <div className="text-[13px] text-ink-2 mb-4">Pilih reseller, isi produk dan jumlah pack. Total dihitung otomatis.</div>
+        <OrderForm onDone={() => { setCreating(false); load() }} onCancel={() => setCreating(false)} />
+      </Drawer>
     </>
   )
 }

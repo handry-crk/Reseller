@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import OrderForm from './OrderForm'
 import { api, fmtN, fmtRp, today } from '../lib/api'
 import { useStore } from '../lib/store'
 import { Bar, Confirm, Drawer, Section, Select, StatusTag, TierTag } from './ui'
@@ -79,7 +80,7 @@ function Detail({ r, quick, setQuick, reload, onEdit, onClose, meta, run, can, s
             <div className="text-ink-3 tabular-nums">{a.date}</div>
             <div>
               <span className="font-bold">{TYPE_LABEL[a.type] || a.type}</span>
-              {a.type === 'order' && <> · {fmtN(a.qty)} pack · {fmtRp(a.amount)} <span className={'tag ml-1 ' + (ORDER_CLS[a.status] || '')}>{(meta.orderStatuses || []).find(x => x.id === a.status)?.label || a.status}</span>
+              {a.type === 'order' && <> · {fmtN(a.qty)} pack · {fmtRp(a.amount)} {a.items?.length > 0 && <div className="text-[11px] text-ink-2">{a.items.map(i => `${i.product} ×${i.qty}`).join(', ')}</div>}<span className={'tag ml-1 ' + (ORDER_CLS[a.status] || '')}>{(meta.orderStatuses || []).find(x => x.id === a.status)?.label || a.status}</span>
                 <div className="text-[11px] text-ink-3 font-mono">{a.invoiceNo || ''}{a.receivedDate ? ` · diterima ${a.receivedDate}` : ''} <Link className="link font-medium font-sans ml-1" to={`/invoice/${a.id}`}>invoice</Link>
                   {can.orderStatus && a.status !== 'completed' && <button className="link font-medium font-sans ml-2" onClick={() => run(() => api(`/api/activities/${a.id}`, { method: 'PUT', body: { status: a.status === 'to_ship' ? 'shipping' : 'completed' } }), 'Status pesanan diperbarui').then(reload, () => {})}>→ {a.status === 'to_ship' ? 'Shipping' : 'Completed'}</button>}</div></>}
               {a.type === 'complaint' && (a.status === 'resolved' ? <span className="tag tag-good ml-1">resolved</span> : <><span className="tag ml-1">open</span>{can.write && <button className="link ml-2 text-xs" onClick={() => run(() => api(`/api/activities/${a.id}/resolve`, { method: 'POST' }), 'Complaint selesai').then(reload, () => {})}>tandai selesai</button>}</>)}
@@ -96,6 +97,13 @@ function Detail({ r, quick, setQuick, reload, onEdit, onClose, meta, run, can, s
 const Mini = ({ l, v, s }) => <div className="card p-3"><div className="text-xs font-bold">{l}</div><div className="text-2xl font-extrabold text-brick leading-none my-1.5 tabular-nums">{v}</div><div className="text-[11px] text-ink-2">{s}</div></div>
 
 function QuickAct({ r, type, cms, onDone, onCancel, run }) {
+  if (type === 'order') return (
+    <div className="card border-brick mt-4"><h4 className="text-[13px] font-bold mb-2">Catat Pesanan</h4><OrderForm resellerId={r.id} onDone={onDone} onCancel={onCancel} /></div>
+  )
+  return <QuickActOther r={r} type={type} cms={cms} onDone={onDone} onCancel={onCancel} run={run} />
+}
+
+function QuickActOther({ r, type, cms, onDone, onCancel, run }) {
   const [busy, setBusy] = useState(false)
   const [f, setF] = useState({ date: today(), qty: cms.minRepeatOrder || '', amount: cms.pricePerPack && cms.minRepeatOrder ? cms.pricePerPack * cms.minRepeatOrder : '', note: '', nextFollowUp: '', receivedDate: '', status: 'to_ship' })
   const set = (k) => (e) => setF({ ...f, [k]: e.target.value })

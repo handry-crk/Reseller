@@ -28,7 +28,7 @@ export default function Cms() {
   const add = (k, blank) => () => setC(prev => ({ ...prev, [k]: [...prev[k], blank] }))
   const del = (k) => (i) => setC(prev => ({ ...prev, [k]: prev[k].filter((_, j) => j !== i) }))
   const save = () => {
-    const body = { ...c, tiers: c.tiers.filter(t => t.name).map(t => ({ ...t, minPacks: +t.minPacks || 0 })), education: c.education.filter(e => e.title), templates: c.templates.filter(t => t.name),
+    const body = { ...c, products: (c.products || []).filter(p => p.name.trim()).map(p => ({ name: p.name.trim(), price: +p.price || 0 })), tiers: c.tiers.filter(t => t.name).map(t => ({ ...t, minPacks: +t.minPacks || 0 })), education: c.education.filter(e => e.title), templates: c.templates.filter(t => t.name),
       minFirstOrder: +c.minFirstOrder || 0, minRepeatOrder: +c.minRepeatOrder || 0, pricePerPack: +c.pricePerPack || 0 }
     run(() => api('/api/cms', { method: 'PUT', body }), 'Konten CMS tersimpan').then(setC).catch(() => {})
   }
@@ -39,6 +39,8 @@ export default function Cms() {
       </PageHead>
       {ro && <div className="note mb-4">Anda hanya bisa melihat. Perubahan konten dilakukan oleh role CRM/Admin.</div>}
       <div className="grid lg:grid-cols-2 gap-4">
+        <div className="card lg:col-span-2"><h3 className="card-title">Katalog Produk (untuk pesanan)</h3><div className="hint">Nama produk muncul sebagai pilihan di form pesanan; harga per pack terisi otomatis (masih bisa diubah per pesanan).</div>
+          <Rows items={c.products || []} ro={ro} cols={[{ f: 'name', w: '2fr', ph: 'Nama produk' }, { f: 'price', w: '1fr', ph: 'Harga/pack (Rp)', type: 'number' }]} onChange={row('products')} onAdd={add('products', { name: '', price: 0 })} onDel={del('products')} /></div>
         <div className="card"><h3 className="card-title">Tier List Mitra</h3><div className="hint">Nama tier, minimum pack per bulan (30 hari), dan benefit. Diurutkan otomatis.</div>
           <Rows items={c.tiers} ro={ro} cols={[{ f: 'name', w: '1fr', ph: 'Nama tier' }, { f: 'minPacks', w: '1fr', ph: 'Min pack/bln', type: 'number' }, { f: 'benefit', w: '2fr', ph: 'Benefit' }]} onChange={row('tiers')} onAdd={add('tiers', { name: '', minPacks: 0, benefit: '' })} onDel={del('tiers')} /></div>
         <div className="card"><h3 className="card-title">Product Education</h3><div className="hint">Materi edukasi untuk reseller baru (link video/PDF/katalog)</div>

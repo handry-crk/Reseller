@@ -99,6 +99,12 @@ class StageIn(BaseModel):
 
 
 # ---------- Activity ----------
+class OrderItem(BaseModel):
+    product: str = Field(min_length=1, max_length=80)
+    qty: int = Field(ge=1, le=100000)
+    price: int = Field(ge=0, le=100_000_000)
+
+
 class ActivityIn(BaseModel):
     resellerId: str
     type: ActivityType
@@ -108,6 +114,7 @@ class ActivityIn(BaseModel):
     note: str = ""
     nextFollowUp: str = ""  # hanya untuk followup
     receivedDate: str = ""  # hanya untuk order
+    items: list[OrderItem] = []  # hanya untuk order; bila diisi, qty & amount dihitung server
     status: str = ""  # hanya untuk order: to_ship | shipping | completed
 
     @field_validator("status")
@@ -140,6 +147,7 @@ class OrderUpdateIn(BaseModel):
     qty: Optional[int] = None
     amount: Optional[int] = None
     note: Optional[str] = None
+    items: Optional[list[OrderItem]] = None
 
     @field_validator("status")
     @classmethod
@@ -174,8 +182,14 @@ class Template(BaseModel):
     body: str = ""
 
 
+class Product(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    price: int = Field(ge=0)
+
+
 class CmsIn(BaseModel):
     tiers: list[Tier]
+    products: list[Product] = []
     education: list[Education] = []
     templates: list[Template] = []
     benefit: str = ""

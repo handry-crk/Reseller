@@ -226,3 +226,59 @@ async def test_register_domain_and_approval(client):
     assert (await client.post("/api/auth/register", json={"name": "Xx", "email": "x@evilcitarasakuliner.com", "password": "rahasia123"}, headers=anon)).status_code == 422
     # admin juga wajib domain perusahaan untuk user baru
     assert (await client.post("/api/users", json={"email": "luar@gmail.com", "name": "Luar", "role": "cs", "password": "abcdef"})).status_code == 422
+
+
+MOZZA = ["Mozza Balado", "Mozza Ayam Bawang", "Mozza Asin Pedas", "Mozza BBQ", "Mozza Jagung Bakar"]
+
+
+@pytest.mark.asyncio
+async def test_catalog_default_products(client):
+    cms = (await client.get("/api/cms")).json()
+    assert [p["name"] for p in cms["products"]] == MOZZA and all(p["price"] == 23800 for p in cms["products"])
+
+
+@pytest.mark.asyncio
+async def test_order_items_totals_computed_server_side(client):
+    r = await make_reseller(client)
+    body = {"resellerId": r["id"], "type": "order", "qty": 1, "amount": 1,  # nilai palsu dari klien harus diabaikan
+            "items": [{"product": "Mozza Balado", "qty": 20, "price": 23800},
+                      {"product": "Mozza BBQ", "qty": 10, "price": 22000},
+                      {"product": "Mozza Balado", "qty": 5, "price": 23800}]}  # baris kembar digabung
+    a = (await client.post("/api/activities", json=body)).json()["activity"]
+    assert a["qty"] == 35 and a["amount"] == 25 * 23800 + 10 * 22000 == 815000
+    assert [(i["product"], i["qty"], i["subtotal"]) for i in a["items"]] == [("Mozza Balado", 25, 595000), ("Mozza BBQ", 10, 220000)]
+    d = (await client.get(f"/api/resellers/{r['id']}")).json()
+    assert d["totalPacks"] == 35 and d["totalRevenue"] == 815000 and d["monthly"][-1]["revenue"] == 815000
+    o = (await client.get("/api/orders?month=" + today().isoformat()[:7])).json()
+    assert o["totals"] == {"orders": 1, "packs": 35, "revenue": 815000}
+    assert o["products"][0] == {"product": "Mozza Balado", "packs": 25, "revenue": 595000}
+    # edit item -> total dihitung ulang; ubah total langsung ditolak
+    res = await client.put(f"/api/activities/{a['id']}", json={"items": [{"product": "Mozza Jagung Bakar", "qty": 4, "price": 23800}]})
+    assert res.status_code == 200 and res.json()["qty"] == 4 and res.json()["amount"] == 95200
+    assert (await client.put(f"/api/activities/{a['id']}", json={"amount": 5})).status_code == 422
+    assert (await client.put(f"/api/activities/{a['id']}", json={"items": []})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_order_items_validation(client):
+    r = await make_reseller(client)
+    bad = lambda items: client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "items": items})
+    assert (await bad([{"product": "Produk Palsu", "qty": 1, "price": 1000}])).status_code == 422
+    assert (await bad([{"product": "Mozza BBQ", "qty": 0, "price": 1000}])).status_code == 422
+    assert (await bad([{"product": "Mozza BBQ", "qty": -3, "price": 1000}])).status_code == 422
+    assert (await bad([{"product": "Mozza BBQ", "qty": 2, "price": -1}])).status_code == 422
+    # tanpa item dan tanpa qty tetap ditolak
+    assert (await client.post("/api/activities", json={"resellerId": r["id"], "type": "order"})).status_code == 422
+    # gudang tidak bisa mengubah item
+    await client.post("/api/users", json={"email": "g2@citarasakuliner.com", "name": "Gd", "role": "gudang", "password": "gudang123"})
+    tok = (await client.post("/api/auth/login", json={"email": "g2@citarasakuliner.com", "password": "gudang123"})).json()["token"]
+    a = (await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "items": [{"product": "Mozza BBQ", "qty": 2, "price": 23800}]})).json()["activity"]
+    res = await client.put(f"/api/activities/{a['id']}", json={"items": [{"product": "Mozza BBQ", "qty": 999, "price": 1}]}, headers={"Authorization": "Bearer " + tok})
+    assert res.status_code == 200 and res.json()["qty"] == 2 and res.json()["amount"] == 47600
+
+
+@pytest.mark.asyncio
+async def test_cms_rejects_duplicate_product(client):
+    cms = (await client.get("/api/cms")).json()
+    cms["products"].append({"name": "mozza balado", "price": 1})
+    assert (await client.put("/api/cms", json=cms)).status_code == 422

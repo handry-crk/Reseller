@@ -15,7 +15,9 @@ export default function Invoice() {
   if (!d) return <div className="p-8 text-ink-3">Memuat invoice…</div>
   const { activity: a, reseller: r, company: c, cms } = d
   const unit = cms.pricePerPack || (a.qty ? Math.round(a.amount / a.qty) : 0)
-  const gross = unit * (a.qty || 0)
+  const hasItems = Array.isArray(a.items) && a.items.length > 0
+  const lines = hasItems ? a.items : [{ product: 'Cimol Bojot AA Frozen', qty: a.qty, price: unit, subtotal: unit * (a.qty || 0) }]
+  const gross = lines.reduce((s, l) => s + (l.subtotal || 0), 0)
   const adj = (a.amount || 0) - gross
   return (
     <div className="min-h-screen bg-white text-ink">
@@ -49,11 +51,12 @@ export default function Invoice() {
         <table className="w-full mt-8 text-sm border-collapse">
           <thead><tr className="bg-brick text-cream"><th className="text-left px-3 py-2 rounded-l-lg">Deskripsi</th><th className="text-right px-3 py-2">Qty (pack)</th><th className="text-right px-3 py-2">Harga / pack</th><th className="text-right px-3 py-2 rounded-r-lg">Subtotal</th></tr></thead>
           <tbody>
-            <tr className="border-b border-line"><td className="px-3 py-3">Cimol Bojot AA Frozen{a.note ? <div className="text-xs text-ink-2">{a.note}</div> : null}</td><td className="text-right px-3 py-3 tabular-nums">{fmtN(a.qty)}</td><td className="text-right px-3 py-3 tabular-nums">{fmtRp(unit)}</td><td className="text-right px-3 py-3 tabular-nums">{fmtRp(gross)}</td></tr>
+            {lines.map((l, i) => <tr key={i} className="border-b border-line"><td className="px-3 py-3">{l.product}</td><td className="text-right px-3 py-3 tabular-nums">{fmtN(l.qty)}</td><td className="text-right px-3 py-3 tabular-nums">{fmtRp(l.price)}</td><td className="text-right px-3 py-3 tabular-nums">{fmtRp(l.subtotal)}</td></tr>)}
             {adj !== 0 && <tr className="border-b border-line"><td className="px-3 py-2 text-ink-2" colSpan="3">{adj < 0 ? 'Diskon / penyesuaian' : 'Biaya tambahan (ongkir, dll.)'}</td><td className="text-right px-3 py-2 tabular-nums">{adj < 0 ? '−' : ''}{fmtRp(Math.abs(adj))}</td></tr>}
           </tbody>
-          <tfoot><tr><td colSpan="3" className="text-right px-3 py-3 font-bold">Total dibayar</td><td className="text-right px-3 py-3 font-extrabold text-brick text-lg tabular-nums">{fmtRp(a.amount)}</td></tr></tfoot>
+          <tfoot><tr><td className="px-3 py-3 text-right font-bold">Total</td><td className="text-right px-3 py-3 font-bold tabular-nums">{fmtN(a.qty)} pack</td><td className="text-right px-3 py-3 font-bold">Total dibayar</td><td className="text-right px-3 py-3 font-extrabold text-brick text-lg tabular-nums">{fmtRp(a.amount)}</td></tr></tfoot>
         </table>
+        {a.note && <div className="mt-4 text-xs text-ink-2"><b>Catatan:</b> {a.note}</div>}
         {c.bank && <div className="mt-6 text-sm"><div className="text-xs font-bold text-ink-3 uppercase tracking-wider mb-1">Pembayaran</div><div className="whitespace-pre-line">{c.bank}</div></div>}
         {c.invoiceNote && <div className="mt-6 text-xs text-ink-2 border-t border-line pt-4 whitespace-pre-line">{c.invoiceNote}</div>}
         <div className="mt-10 grid grid-cols-2 text-xs text-ink-3"><div>Dibuat oleh: {a.by || '-'}</div><div className="text-right">Dicetak: {new Date().toLocaleDateString('id-ID')}</div></div>
