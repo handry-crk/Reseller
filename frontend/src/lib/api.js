@@ -30,3 +30,11 @@ export const waLink = (phone, text) => {
   if (p.startsWith('0')) p = '62' + p.slice(1)
   return `https://wa.me/${p}?text=${encodeURIComponent(text || '')}`
 }
+
+/** Ambil file (mis. bukti transfer) dengan token, kembalikan Blob. */
+export async function apiBlob(path) {
+  const tok = getToken()
+  const res = await fetch(BASE + path, { headers: tok ? { Authorization: 'Bearer ' + tok } : {} })
+  if (!res.ok) { let m = res.statusText; try { m = (await res.json()).detail || m } catch {} throw new Error(m) }
+  return res.blob()
+}

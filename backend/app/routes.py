@@ -1,12 +1,14 @@
+import base64
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
 from .auth import CMS_ROLES, WRITE_ROLES, current_user, hash_password, make_token, require, verify_password
 from .db import get_db
 from .defaults import ORDER_STATUSES, STAGES
 from .rules import apply_activity_rules, monthly_revenue, stage_after_order_removed, today
-from .schemas import ApproveIn, RegisterIn, ActivityIn, ChangePasswordIn, CmsIn, LoginIn, OrderUpdateIn, ResellerIn, SettingsIn, StageIn, UserIn
+from .schemas import ApproveIn, ListsIn, ProofIn, RegisterIn, ActivityIn, ChangePasswordIn, CmsIn, LoginIn, OrderUpdateIn, ResellerIn, SettingsIn, StageIn, UserIn
 from .service import (
     activities_by_reseller,
     enriched_reseller,
@@ -16,9 +18,12 @@ from .service import (
     new_id,
     next_invoice_no,
     now_iso,
+    order_money,
     price_items,
     public,
 )
+PROOF_MIMES = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
+PROOF_MAX_BYTES = 2 * 1024 * 1024
 
 ORDER_STATUS_ROLES = ("admin", "crm", "gudang")
 
@@ -269,6 +274,13 @@ async def create_activity(body: ActivityIn, user: dict = Depends(require(*WRITE_
         except ValueError as e:
             raise HTTPException(422, str(e))
         body.qty, body.amount = total_qty, total_amount  # total selalu dihitung server dari item
+    money: dict = {}
+    if body.type == "order":
+        try:
+            money = order_money(body.amount, body.discount, body.shippingFee)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        body.amount = money["amount"]
     if body.type == "order" and body.qty <= 0:
         raise HTTPException(422, "Jumlah pack harus lebih dari 0")
     doc = {"_id": new_id(), "resellerId": body.resellerId, "type": body.type, "date": body.date or today().isoformat(),
@@ -277,6 +289,7 @@ async def create_activity(body: ActivityIn, user: dict = Depends(require(*WRITE_
         doc["status"] = "open"
     if body.type == "order":
         doc["items"] = items
+        doc.update({k: money[k] for k in ("subtotal", "discount", "shippingFee")})
         doc["status"] = body.status or "to_ship"
         doc["receivedDate"] = body.receivedDate
         doc["invoiceNo"] = await next_invoice_no(doc["date"][:7])
@@ -330,9 +343,17 @@ async def update_order(aid: str, body: OrderUpdateIn, user: dict = Depends(requi
         if not data["items"]:
             raise HTTPException(422, "Pesanan minimal berisi satu produk")
         try:
-            data["items"], data["qty"], data["amount"] = price_items(data["items"], (await get_cms()).get("products", []))
+            data["items"], data["qty"], data["subtotal"] = price_items(data["items"], (await get_cms()).get("products", []))
         except ValueError as e:
             raise HTTPException(422, str(e))
+    if any(k in data for k in ("items", "discount", "shippingFee")):
+        cur = public(a)
+        try:
+            money = order_money(int(data.get("subtotal", cur["subtotal"])), int(data.get("discount", cur["discount"])),
+                                int(data.get("shippingFee", cur["shippingFee"])))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        data.update(money)
     elif a.get("items") and ("qty" in data or "amount" in data):
         raise HTTPException(422, "Pesanan berisi rincian produk: ubah lewat daftar produk, bukan total")
     if "qty" in data and data["qty"] <= 0:
@@ -390,7 +411,10 @@ async def list_orders(month: str | None = None, status: str | None = None, _: di
             p["revenue"] += int(it.get("subtotal") or 0)
     return {"orders": rows, "counts": counts, "monthly": monthly_revenue(all_orders), "statuses": ORDER_STATUSES,
             "products": sorted(per_product.values(), key=lambda p: p["packs"], reverse=True),
-            "totals": {"orders": len(rows), "packs": sum(a.get("qty", 0) for a in rows), "revenue": sum(a.get("amount", 0) for a in rows)}}
+            "totals": {"orders": len(rows), "packs": sum(a.get("qty", 0) for a in rows), "revenue": sum(a.get("amount", 0) for a in rows),
+                       "shipping": sum(a.get("shippingFee", 0) for a in rows), "discount": sum(a.get("discount", 0) for a in rows),
+                       "totalPaid": sum(a.get("totalPaid", 0) for a in rows),
+                       "withProof": sum(1 for a in rows if a.get("paymentProof"))}}
 
 
 @router.delete("/activities/{aid}")
@@ -401,6 +425,7 @@ async def delete_activity(aid: str, user: dict = Depends(require("admin", "crm")
     if a.get("type") == "stage":
         raise HTTPException(403, "Riwayat tahap tidak bisa dihapus")
     await get_db().activities.delete_one({"_id": aid})
+    await get_db().proofs.delete_one({"_id": aid})
     if a.get("type") == "order":
         r = await get_db().resellers.find_one({"_id": a["resellerId"]})
         if r:
@@ -431,6 +456,66 @@ async def write_cms(body: CmsIn, _: dict = Depends(require(*CMS_ROLES))):
         seen.add(p["name"].lower())
     await get_db().config.update_one({"_id": "cms"}, {"$set": data}, upsert=True)
     return await get_cms()
+
+
+@router.post("/activities/{aid}/proof")
+async def upload_proof(aid: str, body: ProofIn, user: dict = Depends(require(*WRITE_ROLES))):
+    """Upload / ganti bukti transfer sebuah pesanan (gambar JPG/PNG/WebP atau PDF, maks 2 MB)."""
+    a = await get_db().activities.find_one({"_id": aid, "type": "order"})
+    if not a:
+        raise HTTPException(404, "Pesanan tidak ditemukan")
+    if body.mime not in PROOF_MIMES:
+        raise HTTPException(422, "Format file harus JPG, PNG, WebP, atau PDF")
+    try:
+        raw = base64.b64decode(body.data, validate=True)
+    except Exception:
+        raise HTTPException(422, "File tidak terbaca")
+    if not raw:
+        raise HTTPException(422, "File kosong")
+    if len(raw) > PROOF_MAX_BYTES:
+        raise HTTPException(422, "Ukuran file maksimal 2 MB")
+    sig = {"image/jpeg": raw[:3] == b"\xff\xd8\xff", "image/png": raw[:8] == b"\x89PNG\r\n\x1a\n",
+           "image/webp": raw[:4] == b"RIFF" and raw[8:12] == b"WEBP", "application/pdf": raw[:5] == b"%PDF-"}[body.mime]
+    if not sig:
+        raise HTTPException(422, "Isi file tidak sesuai formatnya")
+    meta_ = {"name": body.name[:200], "mime": body.mime, "size": len(raw), "uploadedAt": now_iso(), "uploadedBy": user["name"]}
+    await get_db().proofs.replace_one({"_id": aid}, {"_id": aid, "data": body.data, **meta_}, upsert=True)
+    await get_db().activities.update_one({"_id": aid}, {"$set": {"paymentProof": meta_}})
+    return public(await get_db().activities.find_one({"_id": aid}))
+
+
+@router.get("/activities/{aid}/proof")
+async def get_proof(aid: str, _: dict = Depends(current_user)):
+    p = await get_db().proofs.find_one({"_id": aid})
+    if not p:
+        raise HTTPException(404, "Bukti transfer belum diupload")
+    return Response(content=base64.b64decode(p["data"]), media_type=p["mime"],
+                    headers={"Content-Disposition": f'inline; filename="bukti-{aid}"', "X-Content-Type-Options": "nosniff",
+                             "Cache-Control": "private, max-age=300"})
+
+
+@router.delete("/activities/{aid}/proof")
+async def delete_proof(aid: str, _: dict = Depends(require("admin", "crm"))):
+    await get_db().proofs.delete_one({"_id": aid})
+    await get_db().activities.update_one({"_id": aid}, {"$set": {"paymentProof": None}})
+    return {"ok": True}
+
+
+@router.put("/settings/lists")
+async def write_lists(body: ListsIn, _: dict = Depends(require(*WRITE_ROLES))):
+    """CS, CRM, dan Admin boleh mengubah daftar PIC, channel, dan area."""
+    data = {}
+    for k in ("pic", "channel", "area"):
+        vals, seen = [], set()
+        for x in getattr(body, k):
+            x = x.strip()
+            if x and x.lower() not in seen:
+                seen.add(x.lower()); vals.append(x)
+        if not vals:
+            raise HTTPException(422, {"pic": "Daftar PIC", "channel": "Daftar channel", "area": "Daftar area"}[k] + " minimal berisi satu")
+        data[k] = vals
+    await get_db().config.update_one({"_id": "settings"}, {"$set": data}, upsert=True)
+    return await get_settings()
 
 
 @router.get("/settings")

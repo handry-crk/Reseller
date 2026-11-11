@@ -24,6 +24,11 @@ def public(doc: dict) -> dict:
         d.setdefault("receivedDate", "")
         d.setdefault("invoiceNo", "")
         d.setdefault("items", [])  # pesanan lama tanpa rincian produk
+        d.setdefault("discount", 0)
+        d.setdefault("shippingFee", 0)
+        d.setdefault("subtotal", int(d.get("amount") or 0) + int(d.get("discount") or 0))
+        d["totalPaid"] = int(d.get("amount") or 0) + int(d.get("shippingFee") or 0)
+        d.setdefault("paymentProof", None)
     return d
 
 
@@ -87,3 +92,10 @@ def price_items(items: list[dict], products: list[dict]) -> tuple[list[dict], in
         merged[key] += int(it["qty"])
     out = [{"product": p, "qty": merged[(p, pr)], "price": pr, "subtotal": merged[(p, pr)] * pr} for p, pr in order]
     return out, sum(i["qty"] for i in out), sum(i["subtotal"] for i in out)
+
+
+def order_money(subtotal: int, discount: int, shipping: int) -> dict:
+    """amount (revenue) = subtotal produk − diskon; total dibayar = amount + ongkir."""
+    if discount > subtotal:
+        raise ValueError("Diskon tidak boleh melebihi subtotal produk")
+    return {"subtotal": subtotal, "discount": discount, "shippingFee": shipping, "amount": subtotal - discount}

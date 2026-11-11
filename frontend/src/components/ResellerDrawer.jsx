@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import OrderForm from './OrderForm'
+import { ProofUpload, ProofView } from './Proof'
 import { api, fmtN, fmtRp, today } from '../lib/api'
 import { useStore } from '../lib/store'
 import { Bar, Confirm, Drawer, Section, Select, StatusTag, TierTag } from './ui'
@@ -80,8 +81,8 @@ function Detail({ r, quick, setQuick, reload, onEdit, onClose, meta, run, can, s
             <div className="text-ink-3 tabular-nums">{a.date}</div>
             <div>
               <span className="font-bold">{TYPE_LABEL[a.type] || a.type}</span>
-              {a.type === 'order' && <> · {fmtN(a.qty)} pack · {fmtRp(a.amount)} {a.items?.length > 0 && <div className="text-[11px] text-ink-2">{a.items.map(i => `${i.product} ×${i.qty}`).join(', ')}</div>}<span className={'tag ml-1 ' + (ORDER_CLS[a.status] || '')}>{(meta.orderStatuses || []).find(x => x.id === a.status)?.label || a.status}</span>
-                <div className="text-[11px] text-ink-3 font-mono">{a.invoiceNo || ''}{a.receivedDate ? ` · diterima ${a.receivedDate}` : ''} <Link className="link font-medium font-sans ml-1" to={`/invoice/${a.id}`}>invoice</Link>
+              {a.type === 'order' && <> · {fmtN(a.qty)} pack · {fmtRp(a.totalPaid ?? a.amount)}{a.shippingFee > 0 ? ` (ongkir ${fmtRp(a.shippingFee)})` : ''} {a.items?.length > 0 && <div className="text-[11px] text-ink-2">{a.items.map(i => `${i.product} ×${i.qty}`).join(', ')}</div>}<span className={'tag ml-1 ' + (ORDER_CLS[a.status] || '')}>{(meta.orderStatuses || []).find(x => x.id === a.status)?.label || a.status}</span>
+                <div className="text-[11px] text-ink-3 font-mono">{a.invoiceNo || ''}{a.receivedDate ? ` · diterima ${a.receivedDate}` : ''} <Link className="link font-medium font-sans ml-1" to={`/invoice/${a.id}`}>invoice</Link> <span className="font-sans ml-1">{a.paymentProof ? <><span className="text-green-700">✓ bukti TF</span> <ProofView order={a} canDelete={can.deleteReseller} onDeleted={reload} /></> : can.write ? <ProofUpload compact order={a} onUploaded={reload} /> : <span className="text-yellow-700">belum ada bukti TF</span>}</span>
                   {can.orderStatus && a.status !== 'completed' && <button className="link font-medium font-sans ml-2" onClick={() => run(() => api(`/api/activities/${a.id}`, { method: 'PUT', body: { status: a.status === 'to_ship' ? 'shipping' : 'completed' } }), 'Status pesanan diperbarui').then(reload, () => {})}>→ {a.status === 'to_ship' ? 'Shipping' : 'Completed'}</button>}</div></>}
               {a.type === 'complaint' && (a.status === 'resolved' ? <span className="tag tag-good ml-1">resolved</span> : <><span className="tag ml-1">open</span>{can.write && <button className="link ml-2 text-xs" onClick={() => run(() => api(`/api/activities/${a.id}/resolve`, { method: 'POST' }), 'Complaint selesai').then(reload, () => {})}>tandai selesai</button>}</>)}
               {a.note && <div className="text-ink-2">{a.note}</div>}
@@ -132,6 +133,9 @@ function QuickActOther({ r, type, cms, onDone, onCancel, run }) {
   )
 }
 
+// Nilai lama yang sudah dihapus dari Pengaturan tetap tampil agar tidak tertimpa diam-diam saat edit.
+const withCur = (opts, cur) => (cur && !opts.includes(cur) ? [...opts, cur] : opts)
+
 export function ResellerForm({ r, onSaved, onCancel }) {
   const { meta, run } = useStore()
   const s = meta.settings
@@ -155,9 +159,9 @@ export function ResellerForm({ r, onSaved, onCancel }) {
       <div className="grid grid-cols-2 gap-3 mt-4">
         <div className="col-span-2"><label className="lbl">Nama reseller / toko *</label><input className="inp" value={f.name} onChange={set('name')} required autoFocus /></div>
         <div><label className="lbl">No. WhatsApp</label><input className="inp" value={f.phone} onChange={set('phone')} /></div>
-        <div><label className="lbl">Area</label><Select options={s.area} value={f.area} onChange={set('area')} /></div>
-        <div><label className="lbl">Channel masuk</label><Select options={s.channel} value={f.channel} onChange={set('channel')} /></div>
-        <div><label className="lbl">PIC</label><Select options={s.pic} value={f.pic} onChange={set('pic')} /></div>
+        <div><label className="lbl">Area</label><Select options={withCur(s.area, f.area)} value={f.area} onChange={set('area')} /></div>
+        <div><label className="lbl">Channel masuk</label><Select options={withCur(s.channel, f.channel)} value={f.channel} onChange={set('channel')} /></div>
+        <div><label className="lbl">PIC</label><Select options={withCur(s.pic, f.pic)} value={f.pic} onChange={set('pic')} /></div>
         <div><label className="lbl">Tahap alur</label><Select options={meta.stages.map((st, i) => ({ value: st.id, label: `${st.side ? '↩' : i + 1}. ${st.label}` }))} value={f.stage} onChange={set('stage')} /></div>
         <div><label className="lbl">Tier (kosong = otomatis)</label><Select options={meta.cms.tiers.map(t => t.name)} value={f.tierManual} onChange={set('tierManual')} placeholder="Otomatis" /></div>
         <div><label className="lbl">Alamat kirim</label><input className="inp" value={f.address} onChange={set('address')} /></div>

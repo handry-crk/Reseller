@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { PageHead } from '../components/Layout'
 import OrderForm from '../components/OrderForm'
+import { ProofUpload, ProofView } from '../components/Proof'
 import { Bar, Drawer, Empty, Kpi, Select } from '../components/ui'
 import { api, fmtN, fmtRp } from '../lib/api'
 import { useStore } from '../lib/store'
@@ -47,7 +48,7 @@ export default function Orders() {
         <Kpi label="To Ship" value={fmtN(d.counts.to_ship)} sub="menunggu dikirim gudang (semua bulan)" />
         <Kpi label="Shipping" value={fmtN(d.counts.shipping)} sub="dalam pengiriman (semua bulan)" />
         <Kpi label="Completed" value={fmtN(d.counts.completed)} sub="sudah diterima reseller (semua bulan)" />
-        <Kpi label={`Revenue ${monthLabel(month)}`} value={fmtRp(totalMonth)} sub={`${fmtN(rows.length)} pesanan · ${fmtN(rows.reduce((s, o) => s + (o.qty || 0), 0))} pack pada filter ini`} />
+        <Kpi label={`Revenue ${monthLabel(month)}`} value={fmtRp(totalMonth)} sub={`${fmtN(rows.length)} pesanan · ${fmtN(rows.reduce((s, o) => s + (o.qty || 0), 0))} pack · ongkir ${fmtRp(rows.reduce((s, o) => s + (o.shippingFee || 0), 0))} (di luar revenue) · ${rows.filter(o => !o.paymentProof).length} belum ada bukti TF`} />
       </div>
       <div className="card mt-4">
         <div className="flex flex-wrap gap-2 items-center mb-3 [&>*]:w-auto [&>*]:min-w-[150px]">
@@ -56,13 +57,14 @@ export default function Orders() {
           <span className="ml-auto text-xs text-ink-3 !min-w-0">{rows.length} pesanan</span>
         </div>
         {rows.length ? <div className="overflow-x-auto"><table className="table"><thead><tr>
-          <th>Invoice</th><th>Tgl Pesan</th><th>Reseller</th><th>Produk</th><th className="num">Pack</th><th className="num">Dibayar</th><th>Status</th><th>Tgl Diterima</th><th>Catatan</th><th></th></tr></thead><tbody>
+          <th>Invoice</th><th>Tgl Pesan</th><th>Reseller</th><th>Produk</th><th className="num">Pack</th><th className="num">Dibayar</th><th>Bukti TF</th><th>Status</th><th>Tgl Diterima</th><th>Catatan</th><th></th></tr></thead><tbody>
           {rows.map(o => <tr key={o.id}>
             <td className="font-mono text-xs whitespace-nowrap">{o.invoiceNo || '-'}</td>
             <td className="whitespace-nowrap">{o.date}</td>
             <td><button className="link" onClick={() => openDetail(o.resellerId)}>{o.resellerName}</button><br /><small className="text-ink-3">{o.pic}</small></td>
             <td className="text-xs min-w-[150px]">{o.items?.length ? o.items.map(i => <div key={i.product + i.price}>{i.product} <b>×{fmtN(i.qty)}</b></div>) : <span className="text-ink-3">(tanpa rincian)</span>}</td>
-            <td className="num">{fmtN(o.qty)}</td><td className="num whitespace-nowrap">{fmtRp(o.amount)}</td>
+            <td className="num">{fmtN(o.qty)}</td><td className="num whitespace-nowrap">{fmtRp(o.totalPaid)}{(o.shippingFee > 0 || o.discount > 0) && <div className="text-[10.5px] text-ink-3 font-normal">{o.discount > 0 ? `diskon ${fmtRp(o.discount)}` : ''}{o.discount > 0 && o.shippingFee > 0 ? ' · ' : ''}{o.shippingFee > 0 ? `ongkir ${fmtRp(o.shippingFee)}` : ''}</div>}</td>
+            <td className="whitespace-nowrap" data-testid="proof-cell">{o.paymentProof ? <><span className="tag tag-good mr-1">✓ ada</span><ProofView order={o} canDelete={can.deleteReseller} onDeleted={load} /></> : can.write ? <ProofUpload compact order={o} onUploaded={load} /> : <span className="tag tag-warn">belum</span>}</td>
             <td>{can.orderStatus
               ? <select className="inp !w-auto !py-1 text-xs" value={o.status} disabled={busy === o.id} onChange={e => setSt(o, e.target.value)}>{statuses.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}</select>
               : <OrderStatusTag s={o.status} statuses={statuses} />}</td>

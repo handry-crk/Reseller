@@ -18,7 +18,8 @@ export default function Invoice() {
   const hasItems = Array.isArray(a.items) && a.items.length > 0
   const lines = hasItems ? a.items : [{ product: 'Cimol Bojot AA Frozen', qty: a.qty, price: unit, subtotal: unit * (a.qty || 0) }]
   const gross = lines.reduce((s, l) => s + (l.subtotal || 0), 0)
-  const adj = (a.amount || 0) - gross
+  const isNew = a.discount !== undefined && hasItems  // pesanan dengan kolom diskon/ongkir
+  const adj = isNew ? 0 : (a.amount || 0) - gross
   return (
     <div className="min-h-screen bg-white text-ink">
       <style>{`@media print { .no-print { display: none !important } body { background: white } @page { size: A4; margin: 14mm } }`}</style>
@@ -54,9 +55,17 @@ export default function Invoice() {
             {lines.map((l, i) => <tr key={i} className="border-b border-line"><td className="px-3 py-3">{l.product}</td><td className="text-right px-3 py-3 tabular-nums">{fmtN(l.qty)}</td><td className="text-right px-3 py-3 tabular-nums">{fmtRp(l.price)}</td><td className="text-right px-3 py-3 tabular-nums">{fmtRp(l.subtotal)}</td></tr>)}
             {adj !== 0 && <tr className="border-b border-line"><td className="px-3 py-2 text-ink-2" colSpan="3">{adj < 0 ? 'Diskon / penyesuaian' : 'Biaya tambahan (ongkir, dll.)'}</td><td className="text-right px-3 py-2 tabular-nums">{adj < 0 ? '−' : ''}{fmtRp(Math.abs(adj))}</td></tr>}
           </tbody>
-          <tfoot><tr><td className="px-3 py-3 text-right font-bold">Total</td><td className="text-right px-3 py-3 font-bold tabular-nums">{fmtN(a.qty)} pack</td><td className="text-right px-3 py-3 font-bold">Total dibayar</td><td className="text-right px-3 py-3 font-extrabold text-brick text-lg tabular-nums">{fmtRp(a.amount)}</td></tr></tfoot>
+          <tfoot>
+            {isNew && (a.discount > 0 || a.shippingFee > 0) && <>
+              <tr><td colSpan="3" className="text-right px-3 pt-3 text-ink-2">Subtotal produk</td><td className="text-right px-3 pt-3 tabular-nums">{fmtRp(a.subtotal)}</td></tr>
+              {a.discount > 0 && <tr><td colSpan="3" className="text-right px-3 pt-1 text-ink-2">Diskon</td><td className="text-right px-3 pt-1 tabular-nums">−{fmtRp(a.discount)}</td></tr>}
+              {a.shippingFee > 0 && <tr><td colSpan="3" className="text-right px-3 pt-1 text-ink-2">Ongkir</td><td className="text-right px-3 pt-1 tabular-nums">{fmtRp(a.shippingFee)}</td></tr>}
+            </>}
+            <tr><td className="px-3 py-3 text-right font-bold">Total</td><td className="text-right px-3 py-3 font-bold tabular-nums">{fmtN(a.qty)} pack</td><td className="text-right px-3 py-3 font-bold">Total dibayar</td><td className="text-right px-3 py-3 font-extrabold text-brick text-lg tabular-nums">{fmtRp(a.totalPaid ?? a.amount)}</td></tr>
+          </tfoot>
         </table>
         {a.note && <div className="mt-4 text-xs text-ink-2"><b>Catatan:</b> {a.note}</div>}
+        <div className="mt-4 text-xs text-ink-2">Bukti transfer: <b>{a.paymentProof ? `diterima (${(a.paymentProof.uploadedAt || '').slice(0, 10)})` : 'belum diterima'}</b></div>
         {c.bank && <div className="mt-6 text-sm"><div className="text-xs font-bold text-ink-3 uppercase tracking-wider mb-1">Pembayaran</div><div className="whitespace-pre-line">{c.bank}</div></div>}
         {c.invoiceNote && <div className="mt-6 text-xs text-ink-2 border-t border-line pt-4 whitespace-pre-line">{c.invoiceNote}</div>}
         <div className="mt-10 grid grid-cols-2 text-xs text-ink-3"><div>Dibuat oleh: {a.by || '-'}</div><div className="text-right">Dicetak: {new Date().toLocaleDateString('id-ID')}</div></div>

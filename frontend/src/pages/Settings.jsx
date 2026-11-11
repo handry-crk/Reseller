@@ -7,21 +7,28 @@ import { useStore } from '../lib/store'
 const ROLES = [{ value: 'admin', label: 'Admin (semua akses)' }, { value: 'crm', label: 'CRM (data + CMS)' }, { value: 'cs', label: 'CS (data reseller & aktivitas)' }, { value: 'gudang', label: 'Gudang (monitoring & status pesanan)' }, { value: 'viewer', label: 'Viewer (hanya lihat)' }]
 
 export default function Settings() {
-  const { meta, run, can, user, notify } = useStore()
+  const { meta, run, can, user, notify, resellers } = useStore()
+  const [lists, setLists] = useState(null)
+  const [listsDirty, setListsDirty] = useState(false)
   const [s, setS] = useState(null)
   const [users, setUsers] = useState([])
   const [approveRole, setApproveRole] = useState({})
   const [uf, setUf] = useState(null) // form user
   const [confirm, setConfirm] = useState(null)
   const [pw, setPw] = useState('')
+  useEffect(() => { if (meta && !listsDirty) setLists({ pic: [...meta.settings.pic], channel: [...meta.settings.channel], area: [...meta.settings.area] }) }, [meta]) // eslint-disable-line
   useEffect(() => { if (meta && !s) { const x = meta.settings; setS({ ...x, pic: x.pic.join(', '), channel: x.channel.join(', '), area: x.area.join(', '), company: { ...x.company }, emailDomains: (x.emailDomains || []).join(', ') }) } }, [meta]) // eslint-disable-line
   const loadUsers = () => can.admin && api('/api/users').then(setUsers).catch(() => {})
   useEffect(() => { loadUsers() }, [can.admin]) // eslint-disable-line
-  if (!s) return null
+  if (!s || !lists) return null
   const ro = !can.admin
   const set = (k) => (e) => setS({ ...s, [k]: e.target.value })
   const split = (v) => v.split(',').map(x => x.trim()).filter(Boolean)
-  const save = () => run(() => api('/api/settings', { method: 'PUT', body: { pic: split(s.pic), channel: split(s.channel), area: split(s.area), pasifDays: +s.pasifDays || 30, churnDays: +s.churnDays || 90, followUpDays: +s.followUpDays || 14, company: s.company, emailDomains: split(s.emailDomains) } }), 'Pengaturan tersimpan').then(() => {}, () => {})
+  const save = () => run(() => api('/api/settings', { method: 'PUT', body: { ...cleanLists(lists), pasifDays: +s.pasifDays || 30, churnDays: +s.churnDays || 90, followUpDays: +s.followUpDays || 14, company: s.company, emailDomains: split(s.emailDomains) } }), 'Pengaturan tersimpan').then(() => {}, () => {})
+  const cleanLists = (l) => Object.fromEntries(['pic', 'channel', 'area'].map(k => [k, l[k].map(x => x.trim()).filter(Boolean)]))
+  const saveLists = () => run(() => api('/api/settings/lists', { method: 'PUT', body: cleanLists(lists) }), 'Daftar PIC, channel & area tersimpan').then(() => setListsDirty(false), () => {})
+  const editList = (k, fn) => { setLists(l => ({ ...l, [k]: fn(l[k]) })); setListsDirty(true) }
+  const usage = (k, v) => resellers.filter(r => (r[k] || '') === v).length
   const saveUser = async (e) => {
     e.preventDefault()
     const body = { email: uf.email, name: uf.name, role: uf.role, active: uf.active, password: uf.password || null }
@@ -37,9 +44,21 @@ export default function Settings() {
         {can.admin && <div className="card lg:col-span-2"><h3 className="card-title">Domain Email Member</h3>
           <div className="hint">Hanya email dengan domain ini yang bisa mendaftar atau dibuat sebagai user. Tulis <b>citarasakuliner</b> untuk semua akhiran (.com, .co.id, .id), atau domain lengkap seperti <b>citarasakuliner.co.id</b>. Pisahkan dengan koma.</div>
           <input className="inp" value={s.emailDomains} onChange={set('emailDomains')} /></div>}
-        <div className="card"><h3 className="card-title">Daftar PIC</h3><div className="hint">Pisahkan dengan koma</div><input className="inp" value={s.pic} onChange={set('pic')} readOnly={ro} /></div>
-        <div className="card"><h3 className="card-title">Channel Masuk</h3><div className="hint">Pisahkan dengan koma</div><input className="inp" value={s.channel} onChange={set('channel')} readOnly={ro} /></div>
-        <div className="card"><h3 className="card-title">Area Operasional</h3><div className="hint">Pisahkan dengan koma</div><input className="inp" value={s.area} onChange={set('area')} readOnly={ro} /></div>
+        <div className="card lg:col-span-2"><div className="flex flex-wrap items-start gap-3"><div className="mr-auto"><h3 className="card-title">Daftar PIC, Channel & Area</h3>
+          <div className="hint">{can.write ? 'Bisa diubah oleh CS, CRM, dan Admin. Pilihan ini muncul di form reseller. Menghapus nama tidak mengubah reseller yang sudah memakainya.' : 'Hanya CS, CRM, dan Admin yang bisa mengubah daftar ini.'}</div></div>
+          {can.write && <button className="btn btn-primary btn-sm" disabled={!listsDirty} onClick={saveLists}>{listsDirty ? 'Simpan Daftar' : 'Tersimpan'}</button>}</div>
+          <div className="grid md:grid-cols-3 gap-4">
+            {[['pic', 'PIC (penanggung jawab)', 'Nama PIC'], ['area', 'Area Operasional', 'Nama area'], ['channel', 'Channel Masuk', 'Nama channel']].map(([k, label, ph]) => (
+              <div key={k} data-list={k}><div className="lbl">{label}</div>
+                <div className="flex flex-col gap-1.5">{lists[k].map((v, i) => (
+                  <div key={k + i} className="flex gap-1.5 items-center">
+                    <input className="inp" aria-label={label} placeholder={ph} value={v} readOnly={!can.write} onChange={e => { const val = e.target.value; editList(k, arr => arr.map((x, j) => j === i ? val : x)) }} />
+                    {v && usage(k, v) > 0 && <span className="text-[11px] text-ink-3 whitespace-nowrap" title="Jumlah reseller yang memakai">{usage(k, v)} rs</span>}
+                    {can.write && lists[k].length > 1 && <button className="btn btn-danger btn-sm" aria-label={'Hapus ' + (v || 'baris')} onClick={() => editList(k, arr => arr.filter((_, j) => j !== i))}>✕</button>}
+                  </div>))}</div>
+                {can.write && <button className="btn btn-sm mt-2" onClick={() => editList(k, arr => [...arr, ''])}>+ Tambah</button>}
+              </div>))}
+          </div></div>
         <div className="card"><h3 className="card-title">Aturan Otomatis</h3><div className="hint">Status dihitung dari hari sejak order terakhir</div>
           <div className="grid grid-cols-2 gap-3">
             <div><label className="lbl">Pasif jika tidak order (hari)</label><input className="inp" type="number" value={s.pasifDays} onChange={set('pasifDays')} readOnly={ro} /></div>

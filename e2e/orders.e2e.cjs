@@ -42,7 +42,7 @@ assert((await dr.locator('.note').last().textContent()).includes('bilangan bulat
 await dr.locator('button[aria-label="Hapus baris"]').nth(2).click();
 assert((await dr.locator('[data-testid=total-amount]').textContent())==='Rp696.000','hapus baris memperbarui total kembali Rp696.000');
 assert(await dr.locator('input[type=date]').nth(1).isDisabled(),'tanggal diterima terkunci saat status bukan Completed');
-await dr.locator('button:has-text("Simpan Pesanan")').click();await p.waitForTimeout(1200);
+await dr.locator('button:has-text("Simpan Pesanan")').click();await p.waitForTimeout(1200);await dr.locator('button:has-text("Selesai")').click();await p.waitForTimeout(400);
 await p.screenshot({path:'/tmp/e6-orders.png'});
 const row=p.locator('tr',{hasText:'Reseller Bekasi Asep'}).filter({hasText:'Rp696.000'});
 assert(await row.count()===1,'pesanan tampil di tabel dengan total Rp696.000');
@@ -63,7 +63,7 @@ const dr2=p.locator('div.fixed.top-0.right-0:not(.translate-x-full)');
 await dr2.locator('input[aria-label="Jumlah pack"]').fill('4');
 assert((await dr2.locator('.note').last().textContent()).includes('di bawah minimal order (10 pack)'),'peringatan minimal order pertama 10 pack muncul');
 await dr2.locator('input[aria-label="Jumlah pack"]').fill('12');
-await dr2.locator('button:has-text("Simpan Pesanan")').click();await p.waitForTimeout(1200);
+await dr2.locator('button:has-text("Simpan Pesanan")').click();await p.waitForTimeout(1200);await dr2.locator('button:has-text("Selesai")').click();await p.waitForTimeout(800);
 const hist=await dr2.textContent();
 assert(hist.includes('12 pack') && hist.includes('Rp285.600') && hist.includes('Mozza Balado ×12'),'riwayat reseller: 12 pack × 23.800 = Rp285.600');
 assert(hist.includes('Pembelian Minimal Order'),'order pertama memindahkan tahap ke Pembelian Minimal Order');

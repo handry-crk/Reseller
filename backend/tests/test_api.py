@@ -250,7 +250,7 @@ async def test_order_items_totals_computed_server_side(client):
     d = (await client.get(f"/api/resellers/{r['id']}")).json()
     assert d["totalPacks"] == 35 and d["totalRevenue"] == 815000 and d["monthly"][-1]["revenue"] == 815000
     o = (await client.get("/api/orders?month=" + today().isoformat()[:7])).json()
-    assert o["totals"] == {"orders": 1, "packs": 35, "revenue": 815000}
+    assert {k: o["totals"][k] for k in ("orders", "packs", "revenue")} == {"orders": 1, "packs": 35, "revenue": 815000}
     assert o["products"][0] == {"product": "Mozza Balado", "packs": 25, "revenue": 595000}
     # edit item -> total dihitung ulang; ubah total langsung ditolak
     res = await client.put(f"/api/activities/{a['id']}", json={"items": [{"product": "Mozza Jagung Bakar", "qty": 4, "price": 23800}]})
@@ -282,3 +282,67 @@ async def test_cms_rejects_duplicate_product(client):
     cms = (await client.get("/api/cms")).json()
     cms["products"].append({"name": "mozza balado", "price": 1})
     assert (await client.put("/api/cms", json=cms)).status_code == 422
+
+
+PNG_1PX = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
+
+@pytest.mark.asyncio
+async def test_order_discount_shipping(client):
+    r = await make_reseller(client)
+    body = {"resellerId": r["id"], "type": "order", "items": [{"product": "Mozza Balado", "qty": 10, "price": 23800}],
+            "discount": 18000, "shippingFee": 25000}
+    a = (await client.post("/api/activities", json=body)).json()["activity"]
+    assert a["subtotal"] == 238000 and a["discount"] == 18000 and a["shippingFee"] == 25000
+    assert a["amount"] == 220000 and a["totalPaid"] == 245000  # revenue tanpa ongkir; dibayar = revenue + ongkir
+    d = (await client.get(f"/api/resellers/{r['id']}")).json()
+    assert d["totalRevenue"] == 220000
+    o = (await client.get("/api/orders?month=" + today().isoformat()[:7])).json()["totals"]
+    assert o["revenue"] == 220000 and o["shipping"] == 25000 and o["totalPaid"] == 245000 and o["discount"] == 18000
+    # diskon > subtotal ditolak; negatif ditolak
+    bad = dict(body, discount=300000)
+    assert (await client.post("/api/activities", json=bad)).status_code == 422
+    assert (await client.post("/api/activities", json=dict(body, shippingFee=-1))).status_code == 422
+    # ubah ongkir saja -> dihitung ulang
+    res = (await client.put(f"/api/activities/{a['id']}", json={"shippingFee": 0, "discount": 0})).json()
+    assert res["amount"] == 238000 and res["totalPaid"] == 238000
+    # ubah item -> diskon lama dipertahankan
+    await client.put(f"/api/activities/{a['id']}", json={"discount": 8000})
+    res = (await client.put(f"/api/activities/{a['id']}", json={"items": [{"product": "Mozza BBQ", "qty": 5, "price": 20000}]})).json()
+    assert res["subtotal"] == 100000 and res["amount"] == 92000
+    assert (await client.put(f"/api/activities/{a['id']}", json={"discount": 100001})).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_payment_proof(client):
+    r = await make_reseller(client)
+    a = (await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "items": [{"product": "Mozza BBQ", "qty": 5, "price": 23800}]})).json()["activity"]
+    assert a["paymentProof"] is None
+    up = await client.post(f"/api/activities/{a['id']}/proof", json={"name": "tf.png", "mime": "image/png", "data": PNG_1PX})
+    assert up.status_code == 200 and up.json()["paymentProof"]["name"] == "tf.png"
+    got = await client.get(f"/api/activities/{a['id']}/proof")
+    assert got.status_code == 200 and got.headers["content-type"] == "image/png" and got.content[:4] == b"\x89PNG"
+    # format palsu / tidak didukung / terlalu besar
+    assert (await client.post(f"/api/activities/{a['id']}/proof", json={"name": "x.png", "mime": "image/png", "data": "aGVsbG8="})).status_code == 422
+    assert (await client.post(f"/api/activities/{a['id']}/proof", json={"name": "x.exe", "mime": "application/x-msdownload", "data": "aGVsbG8="})).status_code == 422
+    import base64 as b64
+    big = b64.b64encode(b"%PDF-" + b"0" * (2 * 1024 * 1024)).decode()
+    assert (await client.post(f"/api/activities/{a['id']}/proof", json={"name": "big.pdf", "mime": "application/pdf", "data": big})).status_code == 422
+    o = (await client.get("/api/orders")).json()
+    assert o["totals"]["withProof"] == 1
+    # hapus pesanan ikut menghapus bukti
+    await client.delete(f"/api/activities/{a['id']}")
+    assert (await client.get(f"/api/activities/{a['id']}/proof")).status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_cs_can_edit_lists_only(client):
+    await client.post("/api/users", json={"email": "cs9@citarasakuliner.com", "name": "CS9", "role": "cs", "password": "cs123456"})
+    tok = (await client.post("/api/auth/login", json={"email": "cs9@citarasakuliner.com", "password": "cs123456"})).json()["token"]
+    h = {"Authorization": "Bearer " + tok}
+    res = await client.put("/api/settings/lists", json={"pic": ["Andi", " andi ", "Budi"], "channel": ["WhatsApp"], "area": ["Bandung", "Bali"]}, headers=h)
+    assert res.status_code == 200 and res.json()["pic"] == ["Andi", "Budi"] and res.json()["area"] == ["Bandung", "Bali"]
+    assert res.json()["pasifDays"] == 30  # aturan lain tidak tersentuh
+    assert (await client.put("/api/settings/lists", json={"pic": [], "channel": ["WA"], "area": ["X"]}, headers=h)).status_code == 422
+    s = (await client.get("/api/settings")).json()
+    assert (await client.put("/api/settings", json=s, headers=h)).status_code == 403
