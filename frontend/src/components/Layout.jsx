@@ -35,7 +35,7 @@ export default function Layout() {
         </div>
       </aside>
       <main className="p-4 md:p-7 pb-16 min-w-0"><Outlet /></main>
-      <div className={'fixed bottom-5 left-1/2 -translate-x-1/2 bg-ink text-cream px-4 py-2.5 rounded-full text-[13px] z-[99] transition-opacity pointer-events-none ' + (toast ? 'opacity-100' : 'opacity-0')}>{toast}</div>
+      <div data-testid="toast" role="status" className={'fixed top-3 md:top-auto md:bottom-5 left-1/2 -translate-x-1/2 max-w-[92vw] text-center bg-ink text-cream px-4 py-2.5 rounded-full text-[13px] z-[99] transition-opacity pointer-events-none ' + (toast ? 'opacity-100' : 'opacity-0')}>{toast}</div>
     </div>
   )
 }

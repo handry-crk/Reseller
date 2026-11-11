@@ -38,26 +38,30 @@ export function OrderItemsEditor({ rows, setRows, products, minPacks, discount =
   const used = new Set(rows.map(r => r.product))
   return (
     <div>
-      <div className="overflow-x-auto">
-        <table className="table">
-          <thead><tr><th>Nama produk</th><th className="num">Jumlah pack</th><th className="num">Harga / pack (Rp)</th><th className="num">Subtotal</th><th></th></tr></thead>
-          <tbody>
-            {lines.map(l => (
-              <tr key={l.key}>
-                <td className="min-w-[180px]"><select className="inp" aria-label="Nama produk" value={l.product}
-                  onChange={e => { const p = products.find(x => x.name === e.target.value); upd(l.key, { product: e.target.value, price: p ? p.price : l.price }) }}>
-                  {products.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
-                </select></td>
-                <td className="w-[120px]"><input className={'inp text-right ' + (l.qty !== '' && !l.valid && l.qtyN === 0 ? '!border-brick' : '')} aria-label="Jumlah pack" type="number" min="1" step="1" inputMode="numeric" placeholder="0"
-                  value={l.qty} onChange={e => upd(l.key, { qty: e.target.value })} /></td>
-                <td className="w-[150px]"><input className="inp text-right" aria-label="Harga per pack" type="number" min="0" step="100" inputMode="numeric"
-                  value={l.price} onChange={e => upd(l.key, { price: e.target.value })} /></td>
-                <td className="num whitespace-nowrap font-semibold" data-testid="subtotal">{fmtRp(l.subtotal)}</td>
-                <td>{rows.length > 1 && <button type="button" className="btn btn-danger btn-sm" aria-label="Hapus baris" onClick={() => setRows(rs => rs.filter(r => r.key !== l.key))}>✕</button>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Baris produk: tabel di layar lebar, kartu bertumpuk di HP (tanpa scroll ke samping). */}
+      <div className="hidden md:grid grid-cols-[minmax(180px,2fr)_110px_150px_120px_40px] gap-2 bg-brick text-cream rounded-lg px-3 py-2 text-xs font-bold">
+        <div>Nama produk</div><div className="text-right">Jumlah pack</div><div className="text-right">Harga / pack (Rp)</div><div className="text-right">Subtotal</div><div />
+      </div>
+      <div className="flex flex-col gap-2 md:gap-0 mt-2 md:mt-0">
+        {lines.map((l, idx) => (
+          <div key={l.key} data-testid="order-line" className="grid grid-cols-2 md:grid-cols-[minmax(180px,2fr)_110px_150px_120px_40px] gap-2 items-center rounded-lg md:rounded-none border md:border-0 md:border-b border-line bg-white md:bg-transparent p-3 md:px-3 md:py-2">
+            <div className="col-span-2 md:col-span-1 flex gap-2 items-center">
+              <span className="md:hidden text-xs font-bold text-ink-3 w-5">{idx + 1}.</span>
+              <select className="inp" aria-label="Nama produk" value={l.product}
+                onChange={e => { const p = products.find(x => x.name === e.target.value); upd(l.key, { product: e.target.value, price: p ? p.price : l.price }) }}>
+                {products.map(p => <option key={p.name} value={p.name}>{p.name}</option>)}
+              </select>
+              {rows.length > 1 && <button type="button" className="md:hidden btn btn-danger btn-sm" aria-label="Hapus baris" onClick={() => setRows(rs => rs.filter(r => r.key !== l.key))}>✕</button>}
+            </div>
+            <div><label className="md:hidden lbl">Jumlah pack</label><input className={'inp text-right ' + (l.qty !== '' && !l.valid && l.qtyN === 0 ? '!border-brick' : '')} aria-label="Jumlah pack" type="number" min="1" step="1" inputMode="numeric" placeholder="0"
+              value={l.qty} onChange={e => upd(l.key, { qty: e.target.value })} /></div>
+            <div><label className="md:hidden lbl">Harga / pack (Rp)</label><input className="inp text-right" aria-label="Harga per pack" type="number" min="0" step="100" inputMode="numeric"
+              value={l.price} onChange={e => upd(l.key, { price: e.target.value })} /></div>
+            <div className="col-span-2 md:col-span-1 flex md:block justify-between items-center text-right"><span className="md:hidden text-xs text-ink-2">Subtotal</span>
+              <span className="whitespace-nowrap font-semibold tabular-nums" data-testid="subtotal">{fmtRp(l.subtotal)}</span></div>
+            <div className="hidden md:block">{rows.length > 1 && <button type="button" className="btn btn-danger btn-sm" aria-label="Hapus baris" onClick={() => setRows(rs => rs.filter(r => r.key !== l.key))}>✕</button>}</div>
+          </div>
+        ))}
       </div>
       <button type="button" className="btn btn-sm mt-2" disabled={!products.length}
         onClick={() => setRows(rs => [...rs, newRow(products, (products.find(p => !used.has(p.name)) || products[0]).name)])}>+ Tambah produk</button>
@@ -152,7 +156,12 @@ export default function OrderForm({ resellerId, onDone, onCancel }) {
       </div>
       {err && <div className="note mt-3">{err}</div>}
       <div className="text-[11px] text-ink-3 mt-2">Total = (jumlah pack × harga) − diskon + ongkir, dihitung otomatis. Nomor invoice dibuat saat disimpan; bukti transfer diupload di langkah berikutnya.</div>
-      <div className="flex gap-2 mt-3"><button className="btn btn-primary" onClick={submit} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Pesanan'}</button>{onCancel && <button className="btn btn-ghost" onClick={onCancel} disabled={busy}>Batal</button>}</div>
+      {/* Bilah simpan menempel di bawah layar supaya selalu terlihat, juga di HP saat keyboard terbuka. */}
+      <div data-testid="save-bar" className="sticky bottom-0 z-10 -mx-6 mt-4 px-6 pt-3 pb-[max(12px,env(safe-area-inset-bottom))] bg-cream border-t border-line shadow-[0_-6px_16px_rgba(33,33,33,.08)] flex items-center gap-3">
+        <div className="mr-auto leading-tight"><div className="text-[11px] text-ink-2">{fmtN(computeItems(rows).totalQty)} pack · total dibayar</div><div className="text-lg font-extrabold text-brick tabular-nums">{fmtRp(money.total)}</div></div>
+        {onCancel && <button className="btn btn-ghost" onClick={onCancel} disabled={busy}>Batal</button>}
+        <button className="btn btn-primary" onClick={submit} disabled={busy}>{busy ? 'Menyimpan…' : 'Simpan Pesanan'}</button>
+      </div>
     </div>
   )
 }

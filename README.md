@@ -54,7 +54,7 @@ Login awal: `admin@crk.local` / `admin123` (ubah lewat env `ADMIN_EMAIL`/`ADMIN_
 
 Dengan MongoDB sungguhan: salin `.env.example` → `.env`, isi `MONGO_URL`, lalu `cd backend && uvicorn app.main:app --reload`.
 
-Tes backend: `cd backend && pytest`. Tes E2E: jalankan server in-memory (data bersih), lalu `node e2e/full.e2e.cjs` (seluruh fitur, ±134 pemeriksaan) atau `node e2e/orders.e2e.cjs` (form pesanan).
+Tes backend: `cd backend && pytest`. Tes E2E: jalankan server in-memory (data bersih), lalu `node e2e/full.e2e.cjs` (seluruh fitur, ±134 pemeriksaan), `node e2e/orders.e2e.cjs` (form pesanan), `node e2e/mobile.e2e.cjs` (form pesanan di HP 390 px & 360 px).
 
 ## Deploy (paling sederhana: satu layanan)
 1. **MongoDB Atlas** (gratis): buat cluster M0, buat database user, Network Access → `0.0.0.0/0`, salin connection string → `MONGO_URL`.

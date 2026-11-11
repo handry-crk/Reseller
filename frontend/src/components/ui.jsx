@@ -28,9 +28,9 @@ export function Drawer({ open, onClose, children }) {
   return (
     <>
       <div className={'fixed inset-0 bg-ink/35 z-40 ' + (open ? '' : 'hidden')} onClick={onClose} />
-      <div className={'fixed top-0 right-0 h-screen w-[min(660px,100vw)] bg-cream z-50 overflow-y-auto p-6 shadow-2xl transition-transform ' + (open ? '' : 'translate-x-full')}>
+      <div className={'fixed top-0 right-0 h-screen w-[min(660px,100vw)] bg-cream z-50 overflow-y-auto overscroll-contain px-6 pt-6 pb-0 shadow-2xl transition-transform ' + (open ? '' : 'translate-x-full')}>
         <button className="absolute top-4 right-5 text-2xl text-ink-2" onClick={onClose} aria-label="Tutup">×</button>
-        {open && children}
+        {open && <div className="pb-6">{children}</div>}
       </div>
     </>
   )

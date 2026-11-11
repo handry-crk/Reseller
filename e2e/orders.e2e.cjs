@@ -39,7 +39,7 @@ await dr.locator('button:has-text("Simpan Pesanan")').click();
 assert((await dr.locator('.note').last().textContent()).includes('bilangan bulat'),'validasi: jumlah pack 0 ditolak');
 await qty.nth(2).fill('2.5');await dr.locator('button:has-text("Simpan Pesanan")').click();
 assert((await dr.locator('.note').last().textContent()).includes('bilangan bulat'),'validasi: jumlah pack desimal ditolak');
-await dr.locator('button[aria-label="Hapus baris"]').nth(2).click();
+await dr.locator('button[aria-label="Hapus baris"]:visible').nth(2).click();
 assert((await dr.locator('[data-testid=total-amount]').textContent())==='Rp696.000','hapus baris memperbarui total kembali Rp696.000');
 assert(await dr.locator('input[type=date]').nth(1).isDisabled(),'tanggal diterima terkunci saat status bukan Completed');
 await dr.locator('button:has-text("Simpan Pesanan")').click();await p.waitForTimeout(1200);await dr.locator('button:has-text("Selesai")').click();await p.waitForTimeout(400);

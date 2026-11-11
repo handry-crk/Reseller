@@ -29,7 +29,7 @@ async function login(p, email, pw) {
 }
 const drawer = (p) => p.locator('div.fixed.top-0.right-0:not(.translate-x-full)')
 const nav = async (p, label) => { await p.click(`nav a:has-text("${label}")`); await p.waitForTimeout(400) }
-const toast = async (p) => { await p.waitForTimeout(250); return (await p.locator('div.fixed.bottom-5').textContent()) || '' }
+const toast = async (p) => { await p.waitForTimeout(250); return (await p.locator('[data-testid=toast]').textContent()) || '' }
 
 ;(async () => {
   const b = await chromium.launch()
