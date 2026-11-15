@@ -55,7 +55,7 @@ export default function Dashboard() {
       <div className="grid lg:grid-cols-2 gap-4 mt-4">
         <div className="card"><h3 className="card-title">Perlu Tindakan</h3><div className="hint">Follow-up jatuh tempo, reseller pasif & complaint open</div>
           {d.todo.length ? <div className="overflow-x-auto"><table className="table"><thead><tr><th>Reseller</th><th>Tindakan</th><th>PIC</th></tr></thead><tbody>
-            {d.todo.slice(0, 10).map((t, i) => <tr key={i}><td><button className="link" onClick={() => openDetail(t.id)}>{t.name}</button></td><td><span className={'tag ' + (t.kind === 'complaint' ? '' : 'tag-warn')}>{t.text}</span></td><td>{t.pic || '-'}</td></tr>)}
+            {d.todo.slice(0, 10).map((t, i) => <tr key={i}><td><button className="link" onClick={() => openDetail(t.id)}>{t.name}</button></td><td><span className={'tag ' + (t.kind === 'complaint' ? '' : 'tag-warn')}>{t.text}</span></td><td className="whitespace-nowrap">{t.pic || '-'}</td></tr>)}
           </tbody></table></div> : <Empty>Tidak ada tindakan tertunda</Empty>}</div>
         <div className="card"><h3 className="card-title">Performa PIC</h3><div className="hint">Reseller & repeat order per penanggung jawab</div>
           <div className="flex flex-col gap-2">{d.pics.length ? d.pics.map(p => <Bar key={p.pic} label={p.pic} value={p.resellers} max={picMax} extra={`${p.repeat} repeat`} />) : <Empty>Belum ada data</Empty>}</div></div>
