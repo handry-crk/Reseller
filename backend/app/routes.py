@@ -1,7 +1,7 @@
 import base64
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
 from .auth import CMS_ROLES, WRITE_ROLES, current_user, hash_password, make_token, require, verify_password
@@ -536,25 +536,61 @@ async def write_settings(body: SettingsIn, _: dict = Depends(require("admin"))):
 
 
 # ================= DASHBOARD =================
+def resolve_range(period: str, date_from: str | None, date_to: str | None) -> tuple[str, str]:
+    """Rentang tanggal inklusif (YYYY-MM-DD). ("", "") = semua periode.
+
+    from/to (rentang kustom) diutamakan; period lama (30/90/365 hari) tetap didukung.
+    """
+    from datetime import date as _date, timedelta
+    if date_from or date_to:
+        try:
+            start = _date.fromisoformat(date_from) if date_from else _date(2000, 1, 1)
+            end = _date.fromisoformat(date_to) if date_to else today()
+        except ValueError:
+            raise HTTPException(422, "Format tanggal harus YYYY-MM-DD")
+        if start > end:
+            raise HTTPException(422, "Tanggal mulai tidak boleh setelah tanggal akhir")
+        if date_from and (end - start).days > 3660:
+            raise HTTPException(422, "Rentang maksimal 10 tahun")
+        return start.isoformat(), end.isoformat()
+    days = {"30": 30, "90": 90, "365": 365}.get(period)
+    if days:
+        return (today() - timedelta(days=days)).isoformat(), today().isoformat()
+    return "", ""
+
+
+def local_date(iso_ts: str) -> str:
+    """Tanggal WIB dari timestamp ISO (createdAt disimpan UTC)."""
+    from datetime import datetime as _dt
+    from zoneinfo import ZoneInfo
+    from .config import TZ
+    try:
+        return _dt.fromisoformat(iso_ts).astimezone(ZoneInfo(TZ)).date().isoformat()
+    except (TypeError, ValueError):
+        return (iso_ts or "")[:10]
+
+
 @router.get("/dashboard")
-async def dashboard(period: str = "all", _: dict = Depends(current_user)):
+async def dashboard(period: str = "all", date_from: str | None = Query(None, alias="from"), date_to: str | None = Query(None, alias="to"),
+                    _: dict = Depends(current_user)):
     rows = await enriched_resellers()
     cms = await get_cms()
     t = today().isoformat()
-    days = {"30": 30, "90": 90, "365": 365}.get(period)
-    cutoff = ""
-    if days:
-        from datetime import timedelta
-        cutoff = (today() - timedelta(days=days)).isoformat()
+    start, end = resolve_range(period, date_from, date_to)
+    in_range = (lambda d: start <= (d or "") <= end) if start else (lambda d: True)
     all_acts = [public(a) async for a in get_db().activities.find({"type": "order"})]
-    orders_p = [a for a in all_acts if not cutoff or a.get("date", "") >= cutoff]
+    orders_p = [a for a in all_acts if in_range(a.get("date", ""))]
     revenue = sum(int(a.get("amount") or 0) for a in orders_p)
     buyers = [r for r in rows if r["ordersCount"] > 0]
     repeat = [r for r in rows if r["isRepeat"]]
     by_status = {s: sum(1 for r in rows if r["status"] == s) for s in ("Lead", "Aktif", "Pasif", "Churn")}
     kpi = {
         "total": len(rows),
-        "newInPeriod": sum(1 for r in rows if not cutoff or r.get("createdAt", "")[:10] >= cutoff),
+        "newInPeriod": sum(1 for r in rows if in_range(local_date(r.get("createdAt", "")))),
+        "buyersInPeriod": len({a["resellerId"] for a in orders_p}),
+        "packs": sum(int(a.get("qty") or 0) for a in orders_p),
+        "shipping": sum(int(a.get("shippingFee") or 0) for a in orders_p),
+        "discount": sum(int(a.get("discount") or 0) for a in orders_p),
         "byStatus": by_status,
         "buyers": len(buyers),
         "repeat": len(repeat),
@@ -572,12 +608,21 @@ async def dashboard(period: str = "all", _: dict = Depends(current_user)):
                "count": sum(1 for r in rows if stage_index(r.get("stage", "lead")) >= i)}
               for i, sid in enumerate(main_ids)]
     tiers = [{"tier": tname, "count": sum(1 for r in buyers if r["tier"] == tname)} for tname in [x["name"] for x in cms.get("tiers", [])]]
+    # Agregat pesanan per reseller DALAM periode (untuk Top reseller & revenue PIC).
+    per_res: dict[str, dict] = {}
+    for a in orders_p:
+        x = per_res.setdefault(a["resellerId"], {"orders": 0, "packs": 0, "revenue": 0, "last": ""})
+        x["orders"] += 1
+        x["packs"] += int(a.get("qty") or 0)
+        x["revenue"] += int(a.get("amount") or 0)
+        x["last"] = max(x["last"], a.get("date", ""))
     pics: dict[str, dict] = {}
     for r in rows:
-        p = pics.setdefault(r.get("pic") or "(tanpa PIC)", {"pic": r.get("pic") or "(tanpa PIC)", "resellers": 0, "repeat": 0, "revenue": 0})
+        p = pics.setdefault(r.get("pic") or "(tanpa PIC)", {"pic": r.get("pic") or "(tanpa PIC)", "resellers": 0, "repeat": 0, "revenue": 0, "orders": 0})
         p["resellers"] += 1
         p["repeat"] += 1 if r["isRepeat"] else 0
-        p["revenue"] += r["totalRevenue"]
+        p["revenue"] += per_res.get(r["id"], {}).get("revenue", 0)
+        p["orders"] += per_res.get(r["id"], {}).get("orders", 0)
     todo = []
     for r in rows:
         if r["openComplaints"]:
@@ -586,13 +631,16 @@ async def dashboard(period: str = "all", _: dict = Depends(current_user)):
             todo.append({"id": r["id"], "name": r["name"], "pic": r.get("pic", ""), "kind": "followup", "text": f"Follow-up jatuh tempo {r['nextFollowUp']}"})
         elif r["status"] == "Pasif":
             todo.append({"id": r["id"], "name": r["name"], "pic": r.get("pic", ""), "kind": "pasif", "text": f"Pasif {r['daysSinceLastOrder']} hari, perlu reaktivasi"})
-    top = sorted(buyers, key=lambda r: r["totalRevenue"], reverse=True)[:10]
-    order_counts = {st["id"]: sum(1 for a in all_acts if a.get("status") == st["id"]) for st in ORDER_STATUSES}
+    by_id = {r["id"]: r for r in rows}
+    top_ids = sorted((rid for rid, x in per_res.items() if x["revenue"] > 0 and rid in by_id), key=lambda rid: per_res[rid]["revenue"], reverse=True)[:10]
+    order_counts = {st["id"]: sum(1 for a in orders_p if a.get("status") == st["id"]) for st in ORDER_STATUSES}
     return {"kpi": kpi, "stages": stage_counts, "funnel": funnel, "tiers": tiers, "monthly": monthly_revenue(all_acts),
             "orderCounts": order_counts,
             "pics": sorted(pics.values(), key=lambda p: p["resellers"], reverse=True), "todo": todo,
-            "top": [{k: r[k] for k in ("id", "name", "area", "tier", "ordersCount", "totalPacks", "totalRevenue", "lastOrderDate")} for r in top],
-            "today": t}
+            "top": [{"id": rid, "name": by_id[rid]["name"], "area": by_id[rid].get("area", ""), "tier": by_id[rid]["tier"],
+                     "ordersCount": per_res[rid]["orders"], "totalPacks": per_res[rid]["packs"], "totalRevenue": per_res[rid]["revenue"],
+                     "lastOrderDate": per_res[rid]["last"]} for rid in top_ids],
+            "range": {"from": start, "to": end}, "today": t}
 
 
 # ================= DATA (seed / wipe) =================

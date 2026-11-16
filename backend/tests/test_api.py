@@ -346,3 +346,37 @@ async def test_cs_can_edit_lists_only(client):
     assert (await client.put("/api/settings/lists", json={"pic": [], "channel": ["WA"], "area": ["X"]}, headers=h)).status_code == 422
     s = (await client.get("/api/settings")).json()
     assert (await client.put("/api/settings", json=s, headers=h)).status_code == 403
+
+
+
+@pytest.mark.asyncio
+async def test_dashboard_custom_range(client):
+    r1 = await make_reseller(client, name="Toko Rentang A", phone="0811")
+    r2 = await make_reseller(client, name="Toko Rentang B", phone="0822")
+    d = lambda n: (today() - timedelta(days=n)).isoformat()
+    await order(client, r1["id"], 10, days_ago=40, amount=100000)
+    await order(client, r1["id"], 10, days_ago=10, amount=200000)
+    await order(client, r2["id"], 10, days_ago=5, amount=50000)
+    await order(client, r2["id"], 10, days_ago=0, amount=70000)
+    q = await client.get(f"/api/dashboard?from={d(12)}&to={d(5)}")
+    k = q.json()["kpi"]
+    assert k["revenue"] == 250000 and k["orders"] == 2 and k["aov"] == 125000 and k["buyersInPeriod"] == 2
+    assert q.json()["range"] == {"from": d(12), "to": d(5)}
+    top = q.json()["top"]
+    assert [(x["name"], x["totalRevenue"], x["ordersCount"]) for x in top] == [("Toko Rentang A", 200000, 1), ("Toko Rentang B", 50000, 1)]
+    assert sum(p["revenue"] for p in q.json()["pics"]) == 250000
+    assert sum(q.json()["orderCounts"].values()) == 2
+    # batas inklusif: satu hari
+    assert (await client.get(f"/api/dashboard?from={d(0)}&to={d(0)}")).json()["kpi"]["revenue"] == 70000
+    # hanya from / hanya to
+    assert (await client.get(f"/api/dashboard?from={d(10)}")).json()["kpi"]["revenue"] == 320000
+    assert (await client.get(f"/api/dashboard?to={d(40)}")).json()["kpi"]["revenue"] == 100000
+    # semua periode tetap total keseluruhan; snapshot (status) tidak terpengaruh rentang
+    allp = (await client.get("/api/dashboard")).json()
+    assert allp["kpi"]["revenue"] == 420000 and allp["range"] == {"from": "", "to": ""}
+    assert (await client.get(f"/api/dashboard?from={d(1)}&to={d(1)}")).json()["kpi"]["byStatus"] == allp["kpi"]["byStatus"]
+    # validasi
+    assert (await client.get(f"/api/dashboard?from={d(1)}&to={d(5)}")).status_code == 422
+    assert (await client.get("/api/dashboard?from=2026-13-01")).status_code == 422
+    # period lama tetap jalan
+    assert (await client.get("/api/dashboard?period=30")).json()["kpi"]["revenue"] == 320000

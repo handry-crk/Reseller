@@ -365,9 +365,37 @@ const toast = async (p) => { await p.waitForTimeout(250); return (await p.locato
   ok(ocount === ordsAll.orders.length, 'jumlah status pesanan = jumlah pesanan')
   await nav(a, 'Dashboard'); await a.waitForTimeout(600)
   ok((await a.locator('.kpi-v').first().textContent()) === String(all.length), 'kartu Total Reseller di layar sesuai')
-  await a.locator('select').first().selectOption('30'); await a.waitForTimeout(700)
-  const d30 = (await api('/api/dashboard?period=30', { token: T })).data
-  ok((await a.locator('.kpi-v').nth(3).textContent()) === rp(d30.kpi.revenue), 'filter 30 hari: kartu revenue = data API periode 30 hari (' + rp(d30.kpi.revenue) + ')')
+  const per = a.locator('select[aria-label=Periode]')
+  await per.selectOption('30d'); await a.waitForTimeout(700)
+  const d30 = (await api(`/api/dashboard?from=${daysAgo(29)}&to=${today}`, { token: T })).data
+  ok((await a.locator('.kpi-v').nth(3).textContent()) === rp(d30.kpi.revenue), 'preset 30 hari: kartu revenue = API ' + daysAgo(29) + '…' + today + ' (' + rp(d30.kpi.revenue) + ')')
+  ok(a.url().includes('p=30d'), 'periode tersimpan di alamat halaman (bisa dibagikan)')
+  // rentang kustom: 3 hari terakhir sampai kemarin
+  await per.selectOption('custom'); await a.waitForTimeout(300)
+  await a.fill('input[aria-label="Dari tanggal"]', daysAgo(6)); await a.fill('input[aria-label="Sampai tanggal"]', daysAgo(1))
+  await a.click('button:has-text("Terapkan")'); await a.waitForTimeout(800)
+  const dRange = (await api(`/api/dashboard?from=${daysAgo(6)}&to=${daysAgo(1)}`, { token: T })).data
+  const ordRange = (await api('/api/orders', { token: T })).data.orders.filter(o => o.date >= daysAgo(6) && o.date <= daysAgo(1))
+  ok(dRange.kpi.revenue === ordRange.reduce((s, o) => s + o.amount, 0) && dRange.kpi.orders === ordRange.length, `rentang kustom: revenue = jumlah ${ordRange.length} pesanan di rentang (${rp(dRange.kpi.revenue)})`)
+  ok((await a.locator('.kpi-v').nth(3).textContent()) === rp(dRange.kpi.revenue), 'rentang kustom: kartu revenue di layar sesuai')
+  ok((await a.locator('[data-testid=range-banner]').textContent()).includes('–'), 'label periode menampilkan rentang tanggal')
+  const topScreen = await a.locator('text=Top Reseller by Revenue').locator('xpath=ancestor::div[contains(@class,"card")]').textContent()
+  ok(dRange.top.every(x => topScreen.includes(x.name)) && dRange.top.every(x => ordRange.some(o => o.resellerId === x.id)), 'Top Reseller hanya berisi reseller yang order di rentang')
+  ok(dRange.pics.reduce((s, p) => s + p.revenue, 0) === dRange.kpi.revenue, 'revenue per PIC menjumlah ke revenue periode')
+  ok(JSON.stringify(dRange.kpi.byStatus) === JSON.stringify(dash.kpi.byStatus) && dRange.stages.every((s, i) => s.count === dash.stages[i].count), 'status & tahap tidak berubah oleh rentang (kondisi hari ini)')
+  await a.reload(); await a.waitForSelector('text=Reseller Dashboard'); await a.waitForTimeout(600)
+  ok((await a.locator('input[aria-label="Dari tanggal"]').inputValue()) === daysAgo(6) && (await a.locator('.kpi-v').nth(3).textContent()) === rp(dRange.kpi.revenue), 'rentang tetap sama setelah halaman dimuat ulang')
+  await a.fill('input[aria-label="Dari tanggal"]', daysAgo(1)); await a.fill('input[aria-label="Sampai tanggal"]', daysAgo(5))
+  await a.click('button:has-text("Terapkan")'); await a.waitForTimeout(300)
+  ok((await a.locator('[data-testid=date-range] [role=alert]').count()) === 1 || (await a.locator('input[aria-label="Dari tanggal"]').inputValue()) !== daysAgo(1), 'rentang terbalik (mulai > akhir) ditolak')
+  ok((await api(`/api/dashboard?from=${daysAgo(1)}&to=${daysAgo(5)}`, { token: T })).status === 422, 'API menolak rentang terbalik')
+  await per.selectOption('lastmonth'); await a.waitForTimeout(700)
+  const lm0 = new Date(today.slice(0, 7) + '-01T00:00:00Z'); lm0.setUTCMonth(lm0.getUTCMonth() - 1)
+  const lmEnd = new Date(today.slice(0, 7) + '-01T00:00:00Z'); lmEnd.setUTCDate(0)
+  const dLast = (await api(`/api/dashboard?from=${lm0.toISOString().slice(0, 10)}&to=${lmEnd.toISOString().slice(0, 10)}`, { token: T })).data
+  ok((await a.locator('.kpi-v').nth(3).textContent()) === rp(dLast.kpi.revenue), `preset Bulan lalu = ${lm0.toISOString().slice(0, 10)}…${lmEnd.toISOString().slice(0, 10)} (${rp(dLast.kpi.revenue)})`)
+  await per.selectOption('all'); await a.waitForTimeout(600)
+  ok((await a.locator('.kpi-v').nth(3).textContent()) === rp(dash.kpi.revenue), 'kembali ke Semua periode: revenue total')
 
   // ================= 11. EXPORT, MOBILE, KEAMANAN =================
   sec('Export, mobile, keamanan')
