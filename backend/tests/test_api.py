@@ -380,3 +380,55 @@ async def test_dashboard_custom_range(client):
     assert (await client.get("/api/dashboard?from=2026-13-01")).status_code == 422
     # period lama tetap jalan
     assert (await client.get("/api/dashboard?period=30")).json()["kpi"]["revenue"] == 320000
+
+
+@pytest.mark.asyncio
+async def test_previous_range_rules():
+    from datetime import date
+    from app.performance import previous_range
+    assert previous_range(date(2026, 11, 1), date(2026, 11, 17)) == (date(2026, 10, 1), date(2026, 10, 17))  # MTD vs MTD
+    assert previous_range(date(2026, 10, 1), date(2026, 10, 31)) == (date(2026, 9, 1), date(2026, 9, 30))  # bulan penuh
+    assert previous_range(date(2026, 3, 1), date(2026, 3, 31)) == (date(2026, 2, 1), date(2026, 2, 28))  # Feb lebih pendek
+    assert previous_range(date(2026, 3, 1), date(2026, 3, 30)) == (date(2026, 2, 1), date(2026, 2, 28))  # dibatasi akhir Feb
+    assert previous_range(date(2026, 11, 11), date(2026, 11, 17)) == (date(2026, 11, 4), date(2026, 11, 10))  # 7 hari
+    assert previous_range(date(2026, 9, 1), date(2026, 11, 30)) == (date(2026, 6, 1), date(2026, 8, 31))  # 3 bulan
+
+
+@pytest.mark.asyncio
+async def test_performance_week_and_month(client):
+    from datetime import date as D
+    from app.performance import series
+    t = D(2026, 11, 17)  # Selasa
+    ords = [{"resellerId": "a", "date": "2026-11-16", "amount": 100, "qty": 1},   # Senin minggu ini
+            {"resellerId": "b", "date": "2026-11-17", "amount": 300, "qty": 2},   # Selasa minggu ini
+            {"resellerId": "a", "date": "2026-11-09", "amount": 200, "qty": 1},   # Senin minggu lalu (to-date)
+            {"resellerId": "a", "date": "2026-11-14", "amount": 999, "qty": 9},   # Sabtu minggu lalu (di luar to-date)
+            {"resellerId": "c", "date": "2026-10-05", "amount": 500, "qty": 5}]
+    ld = lambda x: (x or "")[:10]
+    w = series(ords, [], "week", 2, t, ld)
+    cur = w[-1]
+    assert cur["from"] == "2026-11-16" and cur["partial"] and cur["compareTo"] == "2026-11-10"
+    assert cur["revenue"] == 400 and cur["prev"]["revenue"] == 200 and cur["delta"]["revenue"]["pct"] == 100.0
+    assert cur["buyers"] == 2 and cur["delta"]["buyers"]["abs"] == 1
+    full = w[-2]  # minggu lalu penuh vs minggu sebelumnya penuh (tanpa order -> pct None)
+    assert not full["partial"] and full["revenue"] == 1199 and full["delta"]["revenue"]["pct"] is None
+    m = series(ords, [], "month", 2, t, ld)
+    assert m[-1]["key"] == "2026-11" and m[-1]["compareTo"] == "2026-10-17" and m[-1]["revenue"] == 1599 and m[-1]["prev"]["revenue"] == 500
+    assert m[-2]["key"] == "2026-10" and m[-2]["revenue"] == 500 and not m[-2]["partial"]
+
+
+@pytest.mark.asyncio
+async def test_performance_api_and_dashboard_compare(client):
+    r = await make_reseller(client)
+    await order(client, r["id"], 10, days_ago=0, amount=300000)
+    await order(client, r["id"], 10, days_ago=8, amount=100000)
+    p = (await client.get("/api/performance?granularity=week&n=4")).json()
+    assert len(p["series"]) == 4 and p["series"][-1]["toDate"] == today().isoformat()
+    assert sum(s["revenue"] for s in p["series"]) == 400000
+    assert p["byPic"][0]["name"] == "CS 1" and p["byProduct"]
+    assert (await client.get("/api/performance?granularity=year")).status_code == 422
+    d = lambda n: (today() - timedelta(days=n)).isoformat()
+    dash = (await client.get(f"/api/dashboard?from={d(6)}&to={d(0)}")).json()
+    assert dash["compare"]["from"] == d(13) and dash["compare"]["to"] == d(7)
+    assert dash["compare"]["kpi"]["revenue"] == 100000 and dash["compare"]["delta"]["revenue"]["pct"] == 200.0
+    assert (await client.get("/api/dashboard")).json()["compare"] is None

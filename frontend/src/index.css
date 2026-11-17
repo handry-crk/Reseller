@@ -29,8 +29,9 @@
   .table td { @apply px-2.5 py-2 border-b border-line align-middle; }
   .table tr:hover td { @apply bg-brick/5; }
   .num { @apply text-right tabular-nums; }
+  .table th.num { @apply text-right; }
   .link { @apply text-brick font-bold underline cursor-pointer bg-transparent border-0 p-0 text-left; }
   .note { @apply text-xs text-ink-2 bg-brick-soft border-l-[3px] border-brick px-3 py-2 rounded-r-lg; }
   .pre { @apply whitespace-pre-wrap text-[13px] bg-white border border-line rounded-lg p-3; }
-  .kpi-v { @apply text-3xl font-extrabold text-brick leading-none my-2 tabular-nums; }
+  .kpi-v { @apply text-[clamp(1.25rem,6vw,1.875rem)] md:text-3xl font-extrabold text-brick leading-none my-2 tabular-nums break-words; }
 }

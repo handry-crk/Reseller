@@ -10,6 +10,7 @@ import FollowUp from './pages/FollowUp'
 import Invoice from './pages/Invoice'
 import Login from './pages/Login'
 import Orders from './pages/Orders'
+import Performance from './pages/Performance'
 import Pipeline from './pages/Pipeline'
 import Resellers from './pages/Resellers'
 import Settings from './pages/Settings'
@@ -24,6 +25,7 @@ function App() {
       <Route path="/invoice/:id" element={<Invoice />} />
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
+        <Route path="/performa" element={<Performance />} />
         <Route path="/pesanan" element={<Orders />} />
         <Route path="/pipeline" element={<Pipeline />} />
         <Route path="/reseller" element={<Resellers />} />

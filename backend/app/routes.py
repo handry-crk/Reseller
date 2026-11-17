@@ -8,6 +8,7 @@ from .auth import CMS_ROLES, WRITE_ROLES, current_user, hash_password, make_toke
 from .db import get_db
 from .defaults import ORDER_STATUSES, STAGES
 from .rules import apply_activity_rules, monthly_revenue, stage_after_order_removed, today
+from . import performance as perf
 from .schemas import ApproveIn, ListsIn, ProofIn, RegisterIn, ActivityIn, ChangePasswordIn, CmsIn, LoginIn, OrderUpdateIn, ResellerIn, SettingsIn, StageIn, UserIn
 from .service import (
     activities_by_reseller,
@@ -631,6 +632,15 @@ async def dashboard(period: str = "all", date_from: str | None = Query(None, ali
             todo.append({"id": r["id"], "name": r["name"], "pic": r.get("pic", ""), "kind": "followup", "text": f"Follow-up jatuh tempo {r['nextFollowUp']}"})
         elif r["status"] == "Pasif":
             todo.append({"id": r["id"], "name": r["name"], "pic": r.get("pic", ""), "kind": "pasif", "text": f"Pasif {r['daysSinceLastOrder']} hari, perlu reaktivasi"})
+    # Perbandingan dengan periode sebelumnya (hanya bila periode dipilih).
+    compare = None
+    if start:
+        from datetime import date as _date
+        s0, e0 = _date.fromisoformat(start), _date.fromisoformat(end)
+        ps, pe = perf.previous_range(s0, e0)
+        cur_sum = perf.summarize(all_acts, rows, s0, e0, local_date)
+        prev_sum = perf.summarize(all_acts, rows, ps, pe, local_date)
+        compare = {"from": ps.isoformat(), "to": pe.isoformat(), "kpi": prev_sum, "delta": perf.delta(cur_sum, prev_sum)}
     by_id = {r["id"]: r for r in rows}
     top_ids = sorted((rid for rid, x in per_res.items() if x["revenue"] > 0 and rid in by_id), key=lambda rid: per_res[rid]["revenue"], reverse=True)[:10]
     order_counts = {st["id"]: sum(1 for a in orders_p if a.get("status") == st["id"]) for st in ORDER_STATUSES}
@@ -640,7 +650,36 @@ async def dashboard(period: str = "all", date_from: str | None = Query(None, ali
             "top": [{"id": rid, "name": by_id[rid]["name"], "area": by_id[rid].get("area", ""), "tier": by_id[rid]["tier"],
                      "ordersCount": per_res[rid]["orders"], "totalPacks": per_res[rid]["packs"], "totalRevenue": per_res[rid]["revenue"],
                      "lastOrderDate": per_res[rid]["last"]} for rid in top_ids],
-            "range": {"from": start, "to": end}, "today": t}
+            "range": {"from": start, "to": end}, "compare": compare, "today": t}
+
+
+@router.get("/performance")
+async def performance(granularity: str = "week", n: int = 8, _: dict = Depends(current_user)):
+    """Performa week-to-week atau month-to-month (n periode terakhir, terbaru di akhir)."""
+    if granularity not in ("week", "month"):
+        raise HTTPException(422, "granularity harus week atau month")
+    n = max(2, min(n, 52 if granularity == "week" else 24))
+    rows = await enriched_resellers()
+    orders = [public(a) async for a in get_db().activities.find({"type": "order"})]
+    data = perf.series(orders, rows, granularity, n, today(), local_date)
+    # Rincian per PIC & per produk untuk periode terbaru vs pembandingnya
+    last = data[-1]
+    pic_of = {r["id"]: (r.get("pic") or "(tanpa PIC)") for r in rows}
+    def by(keyfn, lo, hi):
+        acc: dict[str, int] = {}
+        for o in orders:
+            if lo <= (o.get("date") or "") <= hi:
+                for k, v in keyfn(o):
+                    acc[k] = acc.get(k, 0) + v
+        return acc
+    pic_fn = lambda o: [(pic_of.get(o["resellerId"], "(terhapus)"), int(o.get("amount") or 0))]
+    prod_fn = lambda o: [(i["product"], int(i.get("qty") or 0)) for i in (o.get("items") or [])] or [("(tanpa rincian produk)", int(o.get("qty") or 0))]
+    def table(fn):
+        cur, prev = by(fn, last["from"], last["toDate"]), by(fn, last["compareFrom"], last["compareTo"])
+        keys = sorted(set(cur) | set(prev), key=lambda k: -cur.get(k, 0))
+        return [{"name": k, "cur": cur.get(k, 0), "prev": prev.get(k, 0),
+                 "pct": round((cur.get(k, 0) - prev.get(k, 0)) / prev[k] * 100, 1) if prev.get(k) else None} for k in keys]
+    return {"granularity": granularity, "series": data, "byPic": table(pic_fn), "byProduct": table(prod_fn), "today": today().isoformat()}
 
 
 # ================= DATA (seed / wipe) =================

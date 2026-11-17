@@ -28,6 +28,8 @@ export default function Dashboard() {
   }, [range.from, range.to, resellers]) // eslint-disable-line
   if (!d) return <Empty>{err || 'Memuat dashboard…'}</Empty>
   const label = rangeLabel(d.range.from, d.range.to)
+  const cmp = d.compare
+  const vs = cmp ? `vs ${rangeLabel(cmp.from, cmp.to)}` : ''
   const isAll = !d.range.from && !d.range.to
   const k = d.kpi
   const max = Math.max(1, k.total)
@@ -40,15 +42,18 @@ export default function Dashboard() {
         {can.write && <button className="btn btn-primary" onClick={() => openForm()}>+ Reseller Baru</button>}
       </PageHead>
       <div className="flex flex-wrap items-center gap-2 mb-3 text-[13px]" data-testid="range-banner">
-        <span className="tag">Periode: {label}</span>
+        <span className="tag">Periode: {label}</span>{cmp && <span className="tag tag-muted">Pembanding: {rangeLabel(cmp.from, cmp.to)}</span>}
+        <Link to="/performa" className="link text-xs">Lihat performa mingguan & bulanan →</Link>
         {!isAll && <span className="text-xs text-ink-3">Revenue, order, reseller baru, status pesanan, performa PIC & top reseller mengikuti periode. Status, tahap, tier & Perlu Tindakan = kondisi hari ini.</span>}
         {err && <span className="text-xs text-brick">{err}</span>}
       </div>
       <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <Kpi label="Total Reseller" value={fmtN(k.total)} sub={isAll ? `${fmtN(k.total)} terdaftar` : `${fmtN(k.newInPeriod)} baru · ${fmtN(k.buyersInPeriod)} reseller order di periode`} />
+        <Kpi label="Total Reseller" value={fmtN(k.total)} sub={isAll ? `${fmtN(k.total)} terdaftar` : `${fmtN(k.newInPeriod)} baru · ${fmtN(k.buyersInPeriod)} reseller order di periode`}
+          delta={cmp?.delta.buyers} deltaNote={cmp && `reseller order ${vs} (${fmtN(cmp.kpi.buyers)})`} />
         <Kpi label="Reseller Aktif" value={fmtN(k.byStatus.Aktif)} sub={`${fmtN(k.byStatus.Pasif)} pasif · ${fmtN(k.byStatus.Churn)} churn`} />
         <Kpi label="Repeat Order Rate" value={k.buyers ? Math.round(k.repeatRate * 100) + '%' : '–'} sub={`${fmtN(k.repeat)} dari ${fmtN(k.buyers)} pembeli`} />
-        <Kpi label={isAll ? 'Revenue Reseller' : 'Revenue Periode'} value={fmtRp(k.revenue)} sub={`${fmtN(k.orders)} order · ${fmtN(k.packs)} pack · AOV ${k.orders ? fmtRp(k.aov) : '–'}`} />
+        <Kpi label={isAll ? 'Revenue Reseller' : 'Revenue Periode'} value={fmtRp(k.revenue)} sub={`${fmtN(k.orders)} order · ${fmtN(k.packs)} pack · AOV ${k.orders ? fmtRp(k.aov) : '–'}`}
+          delta={cmp?.delta.revenue} deltaNote={cmp && `${vs} (${fmtRp(cmp.kpi.revenue)})`} />
       </div>
       <div className="card mt-4">
         <h3 className="card-title">Alur Reseller (Flow)</h3><div className="hint">Kondisi hari ini: jumlah reseller pada setiap tahap. Klik tahap untuk melihat daftarnya.</div>

@@ -397,6 +397,65 @@ const toast = async (p) => { await p.waitForTimeout(250); return (await p.locato
   await per.selectOption('all'); await a.waitForTimeout(600)
   ok((await a.locator('.kpi-v').nth(3).textContent()) === rp(dash.kpi.revenue), 'kembali ke Semua periode: revenue total')
 
+  // ================= 10b. PERFORMA WEEK-TO-WEEK / MONTH-TO-MONTH =================
+  sec('Performa WoW & MoM')
+  // tambah pesanan tersebar 10 minggu agar perbandingan bermakna
+  const resAll = (await api('/api/resellers', { token: T })).data
+  const prodNames = ['Mozza Balado', 'Mozza BBQ', 'Mozza Asin Pedas', 'Mozza Ayam Bawang', 'Mozza Jagung Bakar']
+  let sd = 11; const rnd = () => (sd = (sd * 16807) % 2147483647) / 2147483647
+  for (let i = 0; i < 40; i++) await ord(resAll[Math.floor(rnd() * resAll.length)].id, [{ product: prodNames[Math.floor(rnd() * 5)], qty: 5 + Math.floor(rnd() * 40), price: 23800 }], { date: daysAgo(Math.floor(rnd() * 70)) })
+  const allOrders = (await api('/api/orders', { token: T })).data.orders
+  const sumR = (a2, b2) => allOrders.filter(o => o.date >= a2 && o.date <= b2).reduce((s2, o) => ({ rev: s2.rev + o.amount, n: s2.n + 1, packs: s2.packs + o.qty, buyers: s2.buyers.add(o.resellerId) }), { rev: 0, n: 0, packs: 0, buyers: new Set() })
+  const addD = (iso, n2) => { const x = new Date(iso + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n2); return x.toISOString().slice(0, 10) }
+  const dow = (new Date(today + 'T00:00:00Z').getUTCDay() + 6) % 7  // Senin = 0
+  const monday = addD(today, -dow)
+  const pw = (await api('/api/performance?granularity=week&n=8', { token: T })).data
+  let weekOk = true
+  for (let i = 0; i < 8; i++) {
+    const s0 = addD(monday, -7 * (7 - i)), e0 = addD(s0, 6), b0 = pw.series[i]
+    const cur = sumR(s0, e0 < today ? e0 : today)
+    if (b0.from !== s0 || b0.revenue !== cur.rev || b0.orders !== cur.n || b0.packs !== cur.packs || b0.buyers !== cur.buyers.size) { weekOk = false; console.log('  minggu', s0, b0.revenue, cur.rev) }
+  }
+  ok(weekOk, '8 minggu: revenue, order, pack, reseller per minggu (Senin–Minggu) = hitung ulang dari data pesanan mentah')
+  const cw = pw.series[7], prevTD = sumR(addD(monday, -7), addD(today, -7))
+  ok(cw.partial && cw.compareFrom === addD(monday, -7) && cw.compareTo === addD(today, -7) && cw.prev.revenue === prevTD.rev, `minggu berjalan dibandingkan adil: ${monday}…${today} vs ${addD(monday, -7)}…${addD(today, -7)}`)
+  const expPct = prevTD.rev ? Math.round((cw.revenue - prevTD.rev) / prevTD.rev * 1000) / 10 : null
+  ok(cw.delta.revenue.pct === expPct, `Δ revenue minggu ini = ${expPct}%`)
+  const full = pw.series[6], fullPrev = sumR(addD(monday, -14), addD(monday, -8))
+  ok(!full.partial && full.prev.revenue === fullPrev.rev, 'minggu lalu (penuh) dibandingkan dengan minggu sebelumnya penuh')
+  const pm = (await api('/api/performance?granularity=month&n=3', { token: T })).data
+  const mStart = today.slice(0, 8) + '01'
+  const lastMStart = (() => { const x = new Date(mStart + 'T00:00:00Z'); x.setUTCMonth(x.getUTCMonth() - 1); return x.toISOString().slice(0, 10) })()
+  const lastMSame = lastMStart.slice(0, 8) + today.slice(8)
+  ok(pm.series[2].revenue === sumR(mStart, today).rev && pm.series[2].prev.revenue === sumR(lastMStart, lastMSame).rev, `bulan berjalan (MTD) vs ${lastMStart}…${lastMSame}`)
+  ok(pm.series[1].revenue === sumR(lastMStart, addD(mStart, -1)).rev, 'bulan lalu penuh = jumlah pesanan bulan lalu')
+  // UI
+  await nav(a, 'Performa'); await a.waitForSelector('[data-testid=perf-table]')
+  const kpiTxt = await a.locator('[data-testid=perf-kpis]').textContent()
+  ok(kpiTxt.includes(rp(cw.revenue)) && kpiTxt.includes('Pembanding: ' + rp(cw.prev.revenue)), 'kartu Revenue minggu ini & pembanding tampil sesuai API')
+  const deltaTxt = (await a.locator('[data-testid=perf-kpis] [data-testid=delta]').first().textContent()).trim()
+  const expTxt = expPct === null ? 'baru' : expPct > 0 ? '▲ ' + expPct.toLocaleString('id-ID') + '%' : expPct < 0 ? '▼ ' + Math.abs(expPct).toLocaleString('id-ID') + '%' : '0%'
+  ok(deltaTxt === expTxt, `badge delta revenue tampil "${expTxt}"`, deltaTxt)
+  ok((await a.locator('[data-testid=perf-table] tbody tr').count()) === 8, 'tabel week-to-week berisi 8 minggu')
+  ok((await a.locator('[data-testid=perf-table] tbody tr').first().textContent()).includes('berjalan'), 'baris teratas = minggu berjalan, diberi label "berjalan"')
+  ok((await a.locator('svg[role=img] path').count()) >= 7, 'grafik revenue per minggu tampil')
+  await a.locator('svg[role=img] g').nth(5).hover(); ok(await a.locator('[data-testid=chart-tip]').isVisible(), 'tooltip grafik muncul saat diarahkan')
+  await a.click('button[role=tab]:has-text("Bulanan")'); await a.waitForTimeout(700)
+  ok(a.url().includes('g=month') && (await a.locator('[data-testid=perf-table] tbody tr').count()) === 6, 'tab Bulanan: 6 bulan, tersimpan di URL')
+  ok((await a.locator('[data-testid=perf-kpis]').textContent()).includes(rp(sumR(mStart, today).rev)), 'kartu revenue bulan ini = MTD')
+  ok((await a.locator('text=Revenue per PIC').count()) === 1 && (await a.locator('text=Pack per produk').count()) === 1, 'rincian per PIC & per produk tampil')
+  const pmPic = (await api('/api/performance?granularity=month&n=3', { token: T })).data.byPic
+  ok(pmPic.reduce((s2, x) => s2 + x.cur, 0) === sumR(mStart, today).rev, 'revenue per PIC bulan ini menjumlah ke revenue MTD')
+  // Delta di Dashboard
+  await nav(a, 'Dashboard'); await a.locator('select[aria-label=Periode]').selectOption('7d'); await a.waitForTimeout(800)
+  const d7 = (await api(`/api/dashboard?from=${daysAgo(6)}&to=${today}`, { token: T })).data
+  const prev7 = sumR(daysAgo(13), daysAgo(7)).rev
+  ok(d7.compare.from === daysAgo(13) && d7.compare.kpi.revenue === prev7, 'Dashboard 7 hari dibandingkan 7 hari sebelumnya')
+  ok((await a.locator('.card', { hasText: 'Revenue Periode' }).textContent()).includes(rp(prev7)), 'kartu revenue Dashboard menampilkan pembanding & delta')
+  await vw.goto(U); await vw.waitForSelector('text=Reseller Dashboard'); await nav(vw, 'Performa')
+  ok((await vw.locator('[data-testid=perf-table]').count()) === 1, 'Viewer bisa melihat halaman Performa')
+  ok((await api('/api/performance?granularity=year', { token: T })).status === 422, 'granularity tidak dikenal ditolak')
+
   // ================= 11. EXPORT, MOBILE, KEAMANAN =================
   sec('Export, mobile, keamanan')
   await nav(a, 'Data Reseller')
@@ -405,6 +464,9 @@ const toast = async (p) => { await p.waitForTimeout(250); return (await p.locato
   const m = await newPage(b, { width: 390, height: 844 }); await login(m, 'andi@citarasakuliner.com', 'andi12345')
   const ow = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   ok(ow <= 2, 'tampilan HP (390px): tidak ada scroll horizontal di dashboard', 'kelebihan ' + ow + 'px')
+  await m.click('nav a:has-text("Performa")'); await m.waitForSelector('[data-testid=perf-table]')
+  const ow2 = await m.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
+  ok(ow2 <= 2, 'tampilan HP: halaman Performa tidak melebar ke samping', 'kelebihan ' + ow2 + 'px')
   await m.click('nav a:has-text("Data Reseller")'); await m.waitForTimeout(400)
   await m.locator('button:has-text("Detail")').first().click(); await m.waitForTimeout(400)
   ok(await drawer(m).isVisible(), 'detail reseller terbuka di HP')

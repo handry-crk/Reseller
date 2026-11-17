@@ -18,8 +18,21 @@ export function Bar({ label, value, max, extra }) {
   )
 }
 
-export function Kpi({ label, value, sub }) {
-  return <div className="card"><div className="text-[13px] font-bold">{label}</div><div className="kpi-v">{value}</div><div className="text-xs text-ink-2">{sub}</div></div>
+/** Badge perubahan: ▲ naik (hijau), ▼ turun (merah), – tetap. Arah juga ditulis dengan tanda, bukan hanya warna. */
+export function Delta({ d, title, small }) {
+  if (!d) return null
+  const { pct, abs } = d
+  let text, cls
+  if (pct === null || pct === undefined) { if (!abs) return <span className={'text-ink-3 ' + (small ? 'text-[11px]' : 'text-xs')} title={title}>–</span>; text = 'baru'; cls = 'text-green-700' }
+  else if (pct > 0) { text = '▲ ' + pct.toLocaleString('id-ID', { maximumFractionDigits: 1 }) + '%'; cls = 'text-green-700' }
+  else if (pct < 0) { text = '▼ ' + Math.abs(pct).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + '%'; cls = 'text-brick' }
+  else { text = '0%'; cls = 'text-ink-3' }
+  return <span data-testid="delta" className={'font-bold whitespace-nowrap tabular-nums ' + cls + (small ? ' text-[11px]' : ' text-xs')} title={title}>{text}</span>
+}
+
+export function Kpi({ label, value, sub, delta, deltaNote }) {
+  return <div className="card"><div className="text-[13px] font-bold">{label}</div><div className="kpi-v">{value}</div><div className="text-xs text-ink-2">{sub}</div>
+    {delta && <div className="mt-1.5 flex flex-wrap items-center gap-1.5"><Delta d={delta} /><span className="text-[11px] text-ink-3">{deltaNote}</span></div>}</div>
 }
 
 export const Empty = ({ children }) => <div className="p-7 text-center text-ink-3 text-[13px]">{children}</div>
