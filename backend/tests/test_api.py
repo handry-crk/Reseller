@@ -432,3 +432,39 @@ async def test_performance_api_and_dashboard_compare(client):
     assert dash["compare"]["from"] == d(13) and dash["compare"]["to"] == d(7)
     assert dash["compare"]["kpi"]["revenue"] == 100000 and dash["compare"]["delta"]["revenue"]["pct"] == 200.0
     assert (await client.get("/api/dashboard")).json()["compare"] is None
+
+
+@pytest.mark.asyncio
+async def test_range_buckets_and_compare():
+    from datetime import date as D
+    from app.performance import range_buckets, compare_window
+    # 5–20 Nov 2026 per minggu: Kam 5–Min 8 (dipotong), 9–15, 16–20 (dipotong)
+    b = range_buckets(D(2026, 11, 5), D(2026, 11, 20), "week")
+    assert [(x[0].day, x[1].day, x[2]) for x in b] == [(5, 8, True), (9, 15, False), (16, 20, True)]
+    m = range_buckets(D(2026, 9, 15), D(2026, 11, 3), "month")
+    assert [(x[0].isoformat(), x[1].isoformat(), x[2]) for x in m] == [("2026-09-15", "2026-09-30", True), ("2026-10-01", "2026-10-31", False), ("2026-11-01", "2026-11-03", True)]
+    assert len(range_buckets(D(2026, 11, 1), D(2026, 11, 7), "day")) == 7
+    assert compare_window(D(2026, 3, 1), D(2026, 3, 31), "month") == (D(2026, 2, 1), D(2026, 2, 28))
+    assert compare_window(D(2026, 9, 15), D(2026, 9, 30), "month") == (D(2026, 8, 15), D(2026, 8, 31))
+    assert compare_window(D(2026, 11, 9), D(2026, 11, 15), "week") == (D(2026, 11, 2), D(2026, 11, 8))
+
+
+@pytest.mark.asyncio
+async def test_performance_custom_range_api(client):
+    r = await make_reseller(client)
+    d = lambda n: (today() - timedelta(days=n)).isoformat()
+    for n, amt in [(0, 100000), (2, 200000), (9, 50000), (20, 70000)]:
+        await order(client, r["id"], 10, days_ago=n, amount=amt)
+    res = (await client.get(f"/api/performance?from={d(6)}&to={d(0)}&granularity=day")).json()
+    assert len(res["series"]) == 7 and sum(x["revenue"] for x in res["series"]) == 300000
+    sm = res["summary"]
+    assert sm["revenue"] == 300000 and sm["compareFrom"] == d(13) and sm["compareTo"] == d(7) and sm["prev"]["revenue"] == 50000
+    assert sm["delta"]["revenue"]["pct"] == 500.0
+    assert sum(x["cur"] for x in res["byPic"]) == 300000 and sum(x["prev"] for x in res["byPic"]) == 50000
+    day0 = res["series"][-1]
+    assert day0["from"] == d(0) and day0["revenue"] == 100000 and day0["compareFrom"] == d(1)
+    wk = (await client.get(f"/api/performance?from={d(27)}&to={d(0)}&granularity=week")).json()
+    assert sum(x["revenue"] for x in wk["series"]) == 420000 and wk["series"][0]["from"] == d(27)
+    assert (await client.get(f"/api/performance?from={d(200)}&to={d(0)}&granularity=day")).status_code == 422
+    assert (await client.get(f"/api/performance?from={d(0)}&to={d(5)}&granularity=day")).status_code == 422
+    assert (await client.get(f"/api/performance?from={d(5)}&granularity=day")).status_code == 422

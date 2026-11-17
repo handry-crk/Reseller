@@ -654,16 +654,44 @@ async def dashboard(period: str = "all", date_from: str | None = Query(None, ali
 
 
 @router.get("/performance")
-async def performance(granularity: str = "week", n: int = 8, _: dict = Depends(current_user)):
-    """Performa week-to-week atau month-to-month (n periode terakhir, terbaru di akhir)."""
-    if granularity not in ("week", "month"):
-        raise HTTPException(422, "granularity harus week atau month")
-    n = max(2, min(n, 52 if granularity == "week" else 24))
+async def performance(granularity: str = "week", n: int = 8, date_from: str | None = Query(None, alias="from"),
+                      date_to: str | None = Query(None, alias="to"), _: dict = Depends(current_user)):
+    """Performa week-to-week / month-to-month (n periode terakhir), atau rentang kustom from–to
+    dengan rincian per hari/minggu/bulan (granularity=day|week|month)."""
+    from datetime import date as _date
+    custom = bool(date_from or date_to)
+    if granularity not in (("day", "week", "month") if custom else ("week", "month")):
+        raise HTTPException(422, "granularity harus day, week, atau month" if custom else "granularity harus week atau month")
     rows = await enriched_resellers()
     orders = [public(a) async for a in get_db().activities.find({"type": "order"})]
-    data = perf.series(orders, rows, granularity, n, today(), local_date)
-    # Rincian per PIC & per produk untuk periode terbaru vs pembandingnya
-    last = data[-1]
+    summary = None
+    if custom:
+        if not (date_from and date_to):
+            raise HTTPException(422, "Isi tanggal mulai dan tanggal akhir")
+        try:
+            s0, e0 = _date.fromisoformat(date_from), _date.fromisoformat(date_to)
+        except ValueError:
+            raise HTTPException(422, "Format tanggal harus YYYY-MM-DD")
+        if s0 > e0:
+            raise HTTPException(422, "Tanggal mulai tidak boleh setelah tanggal akhir")
+        days = (e0 - s0).days + 1
+        limit = {"day": 92, "week": 728, "month": 3660}[granularity]
+        if days > limit:
+            raise HTTPException(422, {"day": "Rincian harian maksimal 92 hari; pilih mingguan atau bulanan",
+                                      "week": "Rincian mingguan maksimal 104 minggu; pilih bulanan",
+                                      "month": "Rentang maksimal 10 tahun"}[granularity])
+        data = perf.range_series(orders, rows, s0, e0, granularity, today(), local_date)
+        ps, pe = perf.previous_range(s0, e0)
+        cur_sum = perf.summarize(orders, rows, s0, min(e0, today()) if s0 <= today() else e0, local_date)
+        prev_sum = perf.summarize(orders, rows, ps, pe, local_date)
+        summary = {"from": s0.isoformat(), "to": e0.isoformat(), "compareFrom": ps.isoformat(), "compareTo": pe.isoformat(),
+                   **cur_sum, "prev": prev_sum, "delta": perf.delta(cur_sum, prev_sum)}
+        last = {"from": summary["from"], "toDate": summary["to"], "compareFrom": summary["compareFrom"], "compareTo": summary["compareTo"]}
+    else:
+        n = max(2, min(n, 52 if granularity == "week" else 24))
+        data = perf.series(orders, rows, granularity, n, today(), local_date)
+        last = data[-1]
+    # Rincian per PIC & per produk: periode terbaru (atau seluruh rentang kustom) vs pembandingnya
     pic_of = {r["id"]: (r.get("pic") or "(tanpa PIC)") for r in rows}
     def by(keyfn, lo, hi):
         acc: dict[str, int] = {}
@@ -679,7 +707,8 @@ async def performance(granularity: str = "week", n: int = 8, _: dict = Depends(c
         keys = sorted(set(cur) | set(prev), key=lambda k: -cur.get(k, 0))
         return [{"name": k, "cur": cur.get(k, 0), "prev": prev.get(k, 0),
                  "pct": round((cur.get(k, 0) - prev.get(k, 0)) / prev[k] * 100, 1) if prev.get(k) else None} for k in keys]
-    return {"granularity": granularity, "series": data, "byPic": table(pic_fn), "byProduct": table(prod_fn), "today": today().isoformat()}
+    return {"granularity": granularity, "series": data, "summary": summary, "byPic": table(pic_fn), "byProduct": table(prod_fn),
+            "today": today().isoformat()}
 
 
 # ================= DATA (seed / wipe) =================

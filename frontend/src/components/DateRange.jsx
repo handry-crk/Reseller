@@ -23,7 +23,7 @@ export const rangeLabel = (from, to) => (!from && !to ? 'Semua periode' : from =
  * Pemilih periode: preset cepat + rentang kustom.
  * value = { preset, from, to }; onChange dipanggil dengan nilai baru yang sudah valid.
  */
-export default function DateRange({ value, onChange, today }) {
+export default function DateRange({ value, onChange, today, exclude = [] }) {
   const [draft, setDraft] = useState({ from: value.from, to: value.to })
   const [err, setErr] = useState('')
   useEffect(() => { setDraft({ from: value.from, to: value.to }) }, [value.from, value.to])
@@ -41,7 +41,7 @@ export default function DateRange({ value, onChange, today }) {
   return (
     <div className="flex flex-wrap items-center gap-2" data-testid="date-range">
       <select className="inp !w-auto" aria-label="Periode" value={value.preset} onChange={e => pick(e.target.value)}>
-        {PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+        {PRESETS.filter(p => !exclude.includes(p.id)).map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
       </select>
       {value.preset === 'custom' && <>
         <input className="inp !w-auto" type="date" aria-label="Dari tanggal" value={draft.from} max={draft.to || undefined} onChange={e => setDraft({ ...draft, from: e.target.value })} />

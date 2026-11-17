@@ -100,3 +100,50 @@ def series(orders: list[dict], resellers: list[dict], granularity: str, n: int, 
         out.append({"key": key, "from": s.isoformat(), "to": e.isoformat(), "toDate": cur_end.isoformat(), "partial": partial,
                     "compareFrom": ps.isoformat(), "compareTo": cmp_end.isoformat(), **cur, "prev": prev, "delta": delta(cur, prev)})
     return out
+
+
+def compare_window(s: date, e: date, g: str) -> tuple[date, date]:
+    """Pembanding satu bucket: hari sebelumnya / minggu sebelumnya (hari yang sama) / bulan sebelumnya (tanggal yang sama)."""
+    if g == "day":
+        return s - timedelta(days=1), e - timedelta(days=1)
+    if g == "week":
+        return s - timedelta(days=7), e - timedelta(days=7)
+    ps = add_months(s, -1)
+    full_end = e.day == monthrange(e.year, e.month)[1]
+    pm = add_months(date(e.year, e.month, 1), -1)
+    pe = date(pm.year, pm.month, monthrange(pm.year, pm.month)[1] if full_end else min(e.day, monthrange(pm.year, pm.month)[1]))
+    return ps, pe
+
+
+def range_buckets(start: date, end: date, g: str) -> list[tuple[date, date, bool]]:
+    """Bucket di dalam [start, end]; bucket tepi dipotong mengikuti rentang (clipped=True)."""
+    out, cur = [], start
+    while cur <= end:
+        if g == "day":
+            nat_s, nat_e = cur, cur
+        elif g == "week":
+            nat_s = cur - timedelta(days=cur.weekday()); nat_e = nat_s + timedelta(days=6)
+        else:
+            nat_s = date(cur.year, cur.month, 1); nat_e = date(cur.year, cur.month, monthrange(cur.year, cur.month)[1])
+        s, e = max(nat_s, start), min(nat_e, end)
+        out.append((s, e, (s, e) != (nat_s, nat_e)))
+        cur = e + timedelta(days=1)
+    return out
+
+
+def range_series(orders: list[dict], resellers: list[dict], start: date, end: date, g: str, today: date, local_date) -> list[dict]:
+    out = []
+    for s, e, clipped in range_buckets(start, end, g):
+        to_date = min(e, today)
+        if s > today:  # bucket di masa depan: kosong
+            cur = summarize([], [], s, e, local_date); ps, pe = compare_window(s, e, g)
+            prev = summarize(orders, resellers, ps, pe, local_date)
+        else:
+            ps, pe = compare_window(s, to_date, g)
+            cur = summarize(orders, resellers, s, to_date, local_date)
+            prev = summarize(orders, resellers, ps, pe, local_date)
+        key = s.isoformat() if g != "month" else s.strftime("%Y-%m")
+        out.append({"key": key, "from": s.isoformat(), "to": e.isoformat(), "toDate": to_date.isoformat() if s <= today else e.isoformat(),
+                    "partial": e > today or clipped, "clipped": clipped, "compareFrom": ps.isoformat(), "compareTo": pe.isoformat(),
+                    **cur, "prev": prev, "delta": delta(cur, prev)})
+    return out
