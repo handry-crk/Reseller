@@ -46,7 +46,6 @@ export default function Invoice() {
           <div className="text-right"><table className="ml-auto text-sm"><tbody>
             <tr><td className="pr-4 text-ink-3">Tanggal pesanan</td><td className="font-semibold">{fmtDate(a.date)}</td></tr>
             <tr><td className="pr-4 text-ink-3">Tanggal diterima</td><td className="font-semibold">{fmtDate(a.receivedDate)}</td></tr>
-            <tr><td className="pr-4 text-ink-3">PIC</td><td className="font-semibold">{r?.pic || '-'}</td></tr>
           </tbody></table></div>
         </div>
         <table className="w-full mt-8 text-sm border-collapse">
