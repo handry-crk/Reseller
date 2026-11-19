@@ -21,7 +21,7 @@ export default function Resellers() {
     (!q || [r.name, r.phone, r.area, r.channel].join(' ').toLowerCase().includes(q.toLowerCase())) &&
     (!f.stage || r.stage === f.stage) && (!f.tier || r.tier === f.tier) && (!f.pic || r.pic === f.pic) && (!f.status || r.status === f.status)
   ).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name, 'id') : sort === 'revenue' ? b.totalRevenue - a.totalRevenue
-    : sort === 'last' ? (b.lastOrderDate || '').localeCompare(a.lastOrderDate || '') : (b.createdAt || '').localeCompare(a.createdAt || '')
+    : sort === 'last' ? (b.lastOrderDate || '').localeCompare(a.lastOrderDate || '') : ((b.joinedDate || '') + (b.createdAt || '')).localeCompare((a.joinedDate || '') + (a.createdAt || ''))
   ), [resellers, q, f.stage, f.tier, f.pic, f.status, sort])
   const newCount = rows.filter(isNew).length
 
@@ -53,7 +53,7 @@ export default function Resellers() {
           {rows.map(r => <tr key={r.id}>
             <td><b>{r.name}</b>{isNew(r) && <span className="tag tag-good ml-1.5">Baru</span>}</td><td className="whitespace-nowrap">{r.joinedDate || '-'}</td><td>{r.phone || '-'}</td><td>{r.area || '-'}</td><td>{r.channel || '-'}</td><td>{r.pic || '-'}</td>
             <td><span className="tag">{stageOf(r.stage).label}</span></td><td><TierTag t={r.tier} /></td><td><StatusTag s={r.status} /></td>
-            <td className="num">{fmtN(r.ordersCount)}</td><td className="num">{fmtRp(r.totalRevenue)}</td><td>{r.lastOrderDate || '-'}</td>
+            <td className="num">{fmtN(r.ordersCount)}</td><td className="num">{fmtRp(r.totalRevenue)}</td><td className="whitespace-nowrap">{r.lastOrderDate || '-'}</td>
             <td><button className="btn btn-sm" onClick={() => openDetail(r.id)}>Detail</button></td></tr>)}
         </tbody></table></div> : <Empty>Belum ada reseller yang cocok. {can.write && 'Klik “+ Reseller Baru” atau isi data contoh di Pengaturan.'}</Empty>}
       </div>

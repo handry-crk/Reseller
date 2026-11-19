@@ -513,3 +513,24 @@ async def test_new_resellers_on_dashboard(client):
     d = (await client.get(f"/api/dashboard?from={y}&to={y}")).json()
     assert d["newResellers"] == [] and d["newResellersTotal"] == 0
     assert (await client.get("/api/resellers")).json()[0]["joinedDate"] == today().isoformat()
+
+
+@pytest.mark.asyncio
+async def test_joined_date_never_after_first_order(client):
+    from datetime import timedelta
+    r = await make_reseller(client)
+    old = (today() - timedelta(days=20)).isoformat()
+    mid = (today() - timedelta(days=5)).isoformat()
+    await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "qty": 10, "amount": 238000, "date": mid})
+    a = (await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "qty": 10, "amount": 238000, "date": old})).json()["activity"]
+    row = (await client.get(f"/api/resellers/{r['id']}")).json()
+    row = row.get("reseller", row)
+    assert row["joinedDate"] == old and row["lastOrderDate"] == mid and row["joinedDate"] <= row["lastOrderDate"]
+    d = (await client.get(f"/api/dashboard?from={today().isoformat()}&to={today().isoformat()}")).json()
+    assert d["kpi"]["newInPeriod"] == 0 and d["newResellers"] == []
+    d = (await client.get(f"/api/dashboard?from={old}&to={old}")).json()
+    assert d["kpi"]["newInPeriod"] == 1 and d["newResellers"][0]["joinedDate"] == old
+    # pesanan lama dihapus → tanggal daftar menyesuaikan
+    await client.delete(f"/api/activities/{a['id']}")
+    row = (await client.get(f"/api/resellers/{r['id']}")).json(); row = row.get("reseller", row)
+    assert row["joinedDate"] == mid

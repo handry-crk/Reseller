@@ -602,7 +602,7 @@ async def dashboard(period: str = "all", date_from: str | None = Query(None, ali
     by_status = {s: sum(1 for r in rows if r["status"] == s) for s in ("Lead", "Aktif", "Pasif", "Churn")}
     kpi = {
         "total": len(rows),
-        "newInPeriod": sum(1 for r in rows if in_range(local_date(r.get("createdAt", "")))),
+        "newInPeriod": sum(1 for r in rows if in_range(r["joinedDate"])),
         "buyersInPeriod": len({a["resellerId"] for a in orders_p}),
         "packs": sum(int(a.get("qty") or 0) for a in orders_p),
         "shipping": sum(int(a.get("shippingFee") or 0) for a in orders_p),
@@ -657,7 +657,7 @@ async def dashboard(period: str = "all", date_from: str | None = Query(None, ali
         prev_sum = perf.summarize(all_acts, rows, ps, pe, local_date)
         compare = {"from": ps.isoformat(), "to": pe.isoformat(), "kpi": prev_sum, "delta": perf.delta(cur_sum, prev_sum)}
     # Reseller baru: yang didaftarkan pada periode (atau 10 terbaru bila semua periode), terbaru di atas.
-    newcomers = sorted((r for r in rows if in_range(r["joinedDate"])), key=lambda r: r.get("createdAt", ""), reverse=True)
+    newcomers = sorted((r for r in rows if in_range(r["joinedDate"])), key=lambda r: (r["joinedDate"], r.get("createdAt", "")), reverse=True)
     new_list = [{"id": r["id"], "name": r["name"], "area": r.get("area", ""), "channel": r.get("channel", ""), "pic": r.get("pic", ""),
                  "stage": r.get("stage", "lead"), "status": r["status"], "joinedDate": r["joinedDate"],
                  "ordersCount": r["ordersCount"], "totalRevenue": r["totalRevenue"]} for r in newcomers[:10]]

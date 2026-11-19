@@ -78,7 +78,10 @@ async def enriched_resellers(ids: list[str] | None = None) -> list[dict]:
     acts = await activities_by_reseller([d["id"] for d in docs] if ids is not None else None)
     rows = [enrich(d, acts.get(d["id"], []), settings, cms) for d in docs]
     for r in rows:
-        r["joinedDate"] = local_date(r.get("createdAt", ""))  # tanggal daftar (WIB)
+        # Tanggal daftar (WIB). Bila pesanan pertama dicatat dengan tanggal lebih awal dari saat data diinput,
+        # tanggal daftar mengikuti pesanan pertama — reseller tidak mungkin bertransaksi sebelum terdaftar.
+        entered = local_date(r.get("createdAt", ""))
+        r["joinedDate"] = min(entered, r["firstOrderDate"]) if r.get("firstOrderDate") else entered
     return rows
 
 

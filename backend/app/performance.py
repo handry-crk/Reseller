@@ -20,7 +20,7 @@ def summarize(orders: list[dict], resellers: list[dict], start: date, end: date,
         "packs": sum(int(o.get("qty") or 0) for o in rows),
         "buyers": len({o["resellerId"] for o in rows}),
         "aov": round(revenue / len(rows)) if rows else 0,
-        "newResellers": sum(1 for r in resellers if s <= local_date(r.get("createdAt", "")) <= e),
+        "newResellers": sum(1 for r in resellers if s <= (r.get("joinedDate") or local_date(r.get("createdAt", ""))) <= e),
         "shipping": sum(int(o.get("shippingFee") or 0) for o in rows),
     }
 
