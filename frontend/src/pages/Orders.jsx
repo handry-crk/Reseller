@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
+import DateRange, { PRESETS, rangeLabel } from '../components/DateRange'
 import { PageHead } from '../components/Layout'
 import OrderForm from '../components/OrderForm'
 import { ProofUpload, ProofView } from '../components/Proof'
@@ -19,14 +20,21 @@ const monthLabel = (k) => { const [y, m] = k.split('-'); return new Date(+y, +m 
 export default function Orders() {
   const { meta, resellers, run, can } = useStore()
   const { openDetail, drawer } = useDrawer()
-  const [month, setMonth] = useState(meta.today.slice(0, 7))
+  const [sp, setSp] = useSearchParams()
+  // Periode di alamat halaman (?p=…&from=…&to=…); bawaan = Bulan ini.
+  const preset = PRESETS.some(x => x.id === sp.get('p')) ? sp.get('p') : 'month'
+  const range = preset === 'custom' ? { preset, from: sp.get('from') || '', to: sp.get('to') || '' }
+    : (() => { const [from, to] = PRESETS.find(x => x.id === preset).range(meta.today); return { preset, from, to } })()
+  const setRange = (v) => setSp({ p: v.preset, ...(v.preset === 'custom' ? { from: v.from, to: v.to } : {}) }, { replace: true })
+  const label = rangeLabel(range.from, range.to)
+  const isAll = !range.from && !range.to
   const [status, setStatus] = useState('')
   const [q, setQ] = useState('')
   const [d, setD] = useState(null)
   const [busy, setBusy] = useState('')
   const [creating, setCreating] = useState(false)
-  const load = () => api(`/api/orders?month=${month}${status ? '&status=' + status : ''}`).then(setD).catch(() => {})
-  useEffect(() => { load() }, [month, status, resellers]) // eslint-disable-line
+  const load = () => api(`/api/orders?${isAll ? '' : `from=${range.from}&to=${range.to}`}${status ? '&status=' + status : ''}`).then(setD).catch(() => {})
+  useEffect(() => { load() }, [range.from, range.to, status, resellers]) // eslint-disable-line
   const rows = useMemo(() => (d?.orders || []).filter(o => !q || [o.resellerName, o.invoiceNo, o.note].join(' ').toLowerCase().includes(q.toLowerCase())), [d, q])
   if (!d) return <Empty>Memuat pesanan…</Empty>
   const statuses = d.statuses
@@ -35,20 +43,23 @@ export default function Orders() {
     try { await run(() => api(`/api/activities/${o.id}`, { method: 'PUT', body: { status: st } }), `${o.invoiceNo || 'Pesanan'} → ${statuses.find(x => x.id === st)?.label}`) } catch {} finally { setBusy('') }
   }
   const setRecv = async (o, v) => { if (v === (o.receivedDate || '')) return; try { await run(() => api(`/api/activities/${o.id}`, { method: 'PUT', body: { receivedDate: v } }), 'Tanggal diterima disimpan') } catch {} }
-  const months = d.monthly.map(m => m.month)
   const totalMonth = rows.reduce((s, o) => s + (o.amount || 0), 0)
   const maxRev = Math.max(1, ...d.monthly.map(m => m.revenue))
   return (
     <>
       <PageHead title="<b>Pesanan</b> Reseller" sub="Monitoring pesanan masuk untuk Admin & Gudang: ubah status To Ship → Shipping → Completed, isi tanggal diterima, cetak invoice.">
-        <Select options={months.slice().reverse().map(m => ({ value: m, label: monthLabel(m) }))} value={month} onChange={setMonth} />
+        <DateRange value={range} onChange={setRange} today={meta.today} />
         {can.write && <button className="btn btn-primary" onClick={() => setCreating(true)}>+ Pesanan Baru</button>}
       </PageHead>
+      <div className="flex flex-wrap items-center gap-2 mb-3" data-testid="orders-range">
+        <span className="tag">Periode: {label}</span>
+        {d.backlogOutside > 0 && <span className="note !py-1">{fmtN(d.backlogOutside)} pesanan To Ship/Shipping ada di luar periode ini. <button className="link" onClick={() => setRange({ preset: 'all', from: '', to: '' })}>Lihat semua periode</button></span>}
+      </div>
       <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-4">
-        <Kpi label="To Ship" value={fmtN(d.counts.to_ship)} sub="menunggu dikirim gudang (semua bulan)" />
-        <Kpi label="Shipping" value={fmtN(d.counts.shipping)} sub="dalam pengiriman (semua bulan)" />
-        <Kpi label="Completed" value={fmtN(d.counts.completed)} sub="sudah diterima reseller (semua bulan)" />
-        <Kpi label={`Revenue ${monthLabel(month)}`} value={fmtRp(totalMonth)} sub={`${fmtN(rows.length)} pesanan · ${fmtN(rows.reduce((s, o) => s + (o.qty || 0), 0))} pack · ongkir ${fmtRp(rows.reduce((s, o) => s + (o.shippingFee || 0), 0))} (di luar revenue) · ${rows.filter(o => !o.paymentProof).length} belum ada bukti TF`} />
+        <Kpi label="To Ship" value={fmtN(d.counts.to_ship)} sub="menunggu dikirim gudang" />
+        <Kpi label="Shipping" value={fmtN(d.counts.shipping)} sub="dalam pengiriman" />
+        <Kpi label="Completed" value={fmtN(d.counts.completed)} sub="sudah diterima reseller" />
+        <Kpi label="Revenue periode" value={fmtRp(totalMonth)} sub={`${fmtN(rows.length)} pesanan · ${fmtN(rows.reduce((s, o) => s + (o.qty || 0), 0))} pack · ongkir ${fmtRp(rows.reduce((s, o) => s + (o.shippingFee || 0), 0))} (di luar revenue) · ${rows.filter(o => !o.paymentProof).length} belum ada bukti TF`} />
       </div>
       <div className="card mt-4">
         <div className="flex flex-wrap gap-2 items-center mb-3 [&>*]:w-auto [&>*]:min-w-[150px]">
@@ -74,7 +85,7 @@ export default function Orders() {
             <td><Link className="btn btn-sm" to={`/invoice/${o.id}`}>Invoice</Link></td></tr>)}
         </tbody></table></div> : <Empty>Tidak ada pesanan pada filter ini.</Empty>}
       </div>
-      <div className="card mt-4"><h3 className="card-title">Penjualan per Produk · {monthLabel(month)}</h3><div className="hint">Pack dan nilai per varian pada filter saat ini</div>
+      <div className="card mt-4"><h3 className="card-title">Penjualan per Produk · {label}</h3><div className="hint">Pack dan nilai per varian pada filter saat ini</div>
         {d.products?.length ? <div className="flex flex-col gap-2">{d.products.map(p => <Bar key={p.product} label={p.product} value={p.packs} max={Math.max(1, ...d.products.map(x => x.packs))} extra={`${fmtN(p.packs)} pack · ${fmtRp(p.revenue)}`} />)}</div> : <Empty>Belum ada pesanan.</Empty>}</div>
       <div className="card mt-4"><h3 className="card-title">Revenue per Bulan</h3><div className="hint">Total pembayaran reseller 12 bulan terakhir</div>
         <div className="flex flex-col gap-2">{d.monthly.map(m => <Bar key={m.month} label={monthLabel(m.month)} value={m.revenue} max={maxRev} extra={`${fmtRp(m.revenue)} · ${fmtN(m.orders)} order`} />)}</div></div>

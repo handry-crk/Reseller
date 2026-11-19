@@ -468,3 +468,29 @@ async def test_performance_custom_range_api(client):
     assert (await client.get(f"/api/performance?from={d(200)}&to={d(0)}&granularity=day")).status_code == 422
     assert (await client.get(f"/api/performance?from={d(0)}&to={d(5)}&granularity=day")).status_code == 422
     assert (await client.get(f"/api/performance?from={d(5)}&granularity=day")).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_orders_date_range(client):
+    r = await make_reseller(client)
+    ids = {}
+    for d in ("2026-10-28", "2026-11-03", "2026-11-09"):
+        ids[d] = (await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "qty": 10, "amount": 238000, "date": d})).json()["activity"]["id"]
+    await client.put(f"/api/activities/{ids['2026-11-09']}", json={"status": "completed"})
+    # rentang lintas bulan, batas inklusif
+    o = (await client.get("/api/orders?from=2026-10-28&to=2026-11-03")).json()
+    assert [x["date"] for x in o["orders"]] == ["2026-11-03", "2026-10-28"] or sorted(x["date"] for x in o["orders"]) == ["2026-10-28", "2026-11-03"]
+    assert o["totals"]["orders"] == 2 and o["totals"]["revenue"] == sum(x["amount"] for x in o["orders"])
+    assert o["counts"] == {"to_ship": 2, "shipping": 0, "completed": 0} and o["backlogOutside"] == 0
+    assert o["range"] == {"from": "2026-10-28", "to": "2026-11-03"}
+    # satu hari; pesanan belum selesai di luar rentang dilaporkan sebagai backlog
+    o = (await client.get("/api/orders?from=2026-11-09&to=2026-11-09")).json()
+    assert len(o["orders"]) == 1 and o["counts"]["completed"] == 1 and o["counts"]["to_ship"] == 0 and o["backlogOutside"] == 2
+    # rentang + status
+    o = (await client.get("/api/orders?from=2026-10-01&to=2026-11-30&status=completed")).json()
+    assert len(o["orders"]) == 1 and o["counts"]["to_ship"] == 2
+    # tanpa filter = semua periode; month lama tetap jalan; rentang terbalik ditolak
+    o = (await client.get("/api/orders")).json()
+    assert len(o["orders"]) == 3 and o["backlogOutside"] == 0
+    assert len((await client.get("/api/orders?month=2026-10")).json()["orders"]) == 1
+    assert (await client.get("/api/orders?from=2026-11-09&to=2026-11-01")).status_code == 422

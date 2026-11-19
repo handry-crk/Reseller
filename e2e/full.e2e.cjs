@@ -414,6 +414,33 @@ const toast = async (p) => { await p.waitForTimeout(250); return (await p.locato
   await per.selectOption('all'); await a.waitForTimeout(600)
   ok((await a.locator('.kpi-v').nth(3).textContent()) === rp(dash.kpi.revenue), 'kembali ke Semua periode: revenue total')
 
+  // ================= 10a. PESANAN: RENTANG TANGGAL =================
+  sec('Pesanan: rentang tanggal')
+  await nav(a, 'Pesanan'); await a.waitForSelector('[data-testid=orders-range]')
+  const oPer = a.locator('select[aria-label=Periode]')
+  const oApi = async (f, t) => (await api(`/api/orders?from=${f}&to=${t}`, { token: T })).data
+  const oRows = () => a.locator('table').first().locator('tbody tr').count()
+  const oMonth = await oApi(today.slice(0, 7) + '-01', today)
+  ok((await oPer.inputValue()) === 'month' && (await a.locator('.kpi-v').nth(3).textContent()) === rp(oMonth.totals.revenue), `bawaan Bulan ini: revenue ${rp(oMonth.totals.revenue)}`)
+  await oPer.selectOption('7d'); await a.waitForTimeout(700)
+  const o7 = await oApi(daysAgo(6), today)
+  ok((await a.locator('.kpi-v').nth(3).textContent()) === rp(o7.totals.revenue) && o7.orders.every(o => o.date >= daysAgo(6) && o.date <= today), `7 hari terakhir: ${o7.orders.length} pesanan, ${rp(o7.totals.revenue)}`)
+  ok((await a.locator('.kpi-v').nth(0).textContent()) === String(o7.counts.to_ship) && (await a.locator('.kpi-v').nth(2).textContent()) === String(o7.counts.completed), 'kartu status mengikuti periode')
+  await oPer.selectOption('custom')
+  await a.fill('input[aria-label="Dari tanggal"]', daysAgo(40)); await a.fill('input[aria-label="Sampai tanggal"]', daysAgo(8)); await a.click('button:has-text("Terapkan")'); await a.waitForTimeout(700)
+  const oC = await oApi(daysAgo(40), daysAgo(8))
+  ok(oC.orders.length > 0 && (await oRows()) === oC.orders.length && (await a.locator('.kpi-v').nth(3).textContent()) === rp(oC.totals.revenue), `rentang kustom lintas bulan: ${oC.orders.length} baris, ${rp(oC.totals.revenue)}`)
+  ok(a.url().includes('p=custom') && a.url().includes('from=' + daysAgo(40)), 'rentang tersimpan di alamat halaman')
+  await a.reload(); await a.waitForSelector('[data-testid=orders-range]'); await a.waitForTimeout(600)
+  ok((await a.locator('input[aria-label="Dari tanggal"]').inputValue()) === daysAgo(40) && (await oRows()) === oC.orders.length, 'rentang tetap setelah dimuat ulang')
+  ok(oC.backlogOutside === 0 || (await a.locator('[data-testid=orders-range] .note').count()) === 1, `peringatan pesanan belum selesai di luar periode (${oC.backlogOutside})`)
+  ok((await api(`/api/orders?from=${daysAgo(1)}&to=${daysAgo(5)}`, { token: T })).status === 422, 'API menolak rentang terbalik')
+  await a.locator('select[aria-label=Periode]').selectOption('all'); await a.waitForTimeout(700)
+  const oAll = (await api('/api/orders', { token: T })).data
+  ok(oC.totals.revenue === oAll.orders.filter(o => o.date >= daysAgo(40) && o.date <= daysAgo(8)).reduce((x, o) => x + o.amount, 0), 'revenue rentang = jumlah pesanan pada tanggal tsb')
+  ok((await a.locator('.kpi-v').nth(3).textContent()) === rp(oAll.totals.revenue) && (await a.locator('[data-testid=orders-range] .note').count()) === 0, 'Semua periode: revenue total, tanpa peringatan')
+  await nav(a, 'Dashboard')
+
   // ================= 10b. PERFORMA WEEK-TO-WEEK / MONTH-TO-MONTH =================
   sec('Performa WoW & MoM')
   // tambah pesanan tersebar 10 minggu agar perbandingan bermakna

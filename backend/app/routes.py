@@ -385,14 +385,16 @@ async def stage_history(month: str | None = None, _: dict = Depends(current_user
 
 
 @router.get("/orders")
-async def list_orders(month: str | None = None, status: str | None = None, _: dict = Depends(current_user)):
-    """Daftar pesanan untuk monitoring gudang/admin. month = YYYY-MM."""
+async def list_orders(month: str | None = None, status: str | None = None, date_from: str | None = Query(None, alias="from"),
+                      date_to: str | None = Query(None, alias="to"), _: dict = Depends(current_user)):
+    """Daftar pesanan untuk monitoring gudang/admin. Filter: from/to (YYYY-MM-DD, inklusif) atau month = YYYY-MM."""
+    start, end = resolve_range("all", date_from, date_to)
+    in_range = (lambda a: start <= a.get("date", "") <= end) if start else (lambda a: not month or a.get("date", "").startswith(month))
     q: dict = {"type": "order"}
     if status:
         q["status"] = status if status != "completed" else {"$in": ["completed", None]}
     rows = [public(a) async for a in get_db().activities.find(q)]
-    if month:
-        rows = [a for a in rows if a.get("date", "").startswith(month)]
+    rows = [a for a in rows if in_range(a)]
     names = {r["_id"]: r async for r in get_db().resellers.find({}, {"name": 1, "phone": 1, "area": 1, "pic": 1})}
     for a in rows:
         r = names.get(a["resellerId"], {})
@@ -402,7 +404,10 @@ async def list_orders(month: str | None = None, status: str | None = None, _: di
         a["pic"] = r.get("pic", "")
     rows.sort(key=lambda a: (a.get("date", ""), a.get("createdAt", "")), reverse=True)
     all_orders = [public(a) async for a in get_db().activities.find({"type": "order"})]
-    counts = {st["id"]: sum(1 for a in all_orders if a.get("status") == st["id"]) for st in ORDER_STATUSES}
+    # Kartu status: dalam rentang bila from/to dipakai; semua periode bila tidak (perilaku lama).
+    scope = [a for a in all_orders if in_range(a)] if start else all_orders
+    counts = {st["id"]: sum(1 for a in scope if a.get("status") == st["id"]) for st in ORDER_STATUSES}
+    backlog_outside = sum(1 for a in all_orders if a.get("status") in ("to_ship", "shipping") and not in_range(a)) if start else 0
     per_product: dict[str, dict] = {}
     for a in rows:
         lines = a.get("items") or [{"product": "(tanpa rincian produk)", "qty": a.get("qty", 0), "subtotal": a.get("amount", 0)}]
@@ -410,7 +415,8 @@ async def list_orders(month: str | None = None, status: str | None = None, _: di
             p = per_product.setdefault(it["product"], {"product": it["product"], "packs": 0, "revenue": 0})
             p["packs"] += int(it.get("qty") or 0)
             p["revenue"] += int(it.get("subtotal") or 0)
-    return {"orders": rows, "counts": counts, "monthly": monthly_revenue(all_orders), "statuses": ORDER_STATUSES,
+    return {"orders": rows, "counts": counts, "backlogOutside": backlog_outside, "range": {"from": start, "to": end},
+            "monthly": monthly_revenue(all_orders), "statuses": ORDER_STATUSES,
             "products": sorted(per_product.values(), key=lambda p: p["packs"], reverse=True),
             "totals": {"orders": len(rows), "packs": sum(a.get("qty", 0) for a in rows), "revenue": sum(a.get("amount", 0) for a in rows),
                        "shipping": sum(a.get("shippingFee", 0) for a in rows), "discount": sum(a.get("discount", 0) for a in rows),
