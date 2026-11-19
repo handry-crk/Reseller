@@ -29,6 +29,7 @@ def public(doc: dict) -> dict:
         d.setdefault("subtotal", int(d.get("amount") or 0) + int(d.get("discount") or 0))
         d["totalPaid"] = int(d.get("amount") or 0) + int(d.get("shippingFee") or 0)
         d.setdefault("paymentProof", None)
+        d.setdefault("shippingProof", None)
     return d
 
 

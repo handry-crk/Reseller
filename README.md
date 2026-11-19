@@ -55,7 +55,7 @@ Login awal: `admin@crk.local` / `admin123` (ubah lewat env `ADMIN_EMAIL`/`ADMIN_
 
 Dengan MongoDB sungguhan: salin `.env.example` → `.env`, isi `MONGO_URL`, lalu `cd backend && uvicorn app.main:app --reload`.
 
-Tes backend: `cd backend && pytest`. Tes E2E: jalankan server in-memory (data bersih), lalu `node e2e/full.e2e.cjs` (seluruh fitur, ±184 pemeriksaan), `node e2e/orders.e2e.cjs` (form pesanan), `node e2e/mobile.e2e.cjs` (form pesanan di HP 390 px & 360 px).
+Tes backend: `cd backend && pytest`. Tes E2E: jalankan server in-memory (data bersih), lalu `node e2e/full.e2e.cjs` (seluruh fitur, ±192 pemeriksaan), `node e2e/orders.e2e.cjs` (form pesanan), `node e2e/mobile.e2e.cjs` (form pesanan di HP 390 px & 360 px).
 
 ## Deploy (paling sederhana: satu layanan)
 1. **MongoDB Atlas** (gratis): buat cluster M0, buat database user, Network Access → `0.0.0.0/0`, salin connection string → `MONGO_URL`.
@@ -74,4 +74,4 @@ Kode ini milik Anda. Buka repo di Claude Code (atau editor apa pun) dan minta pe
 Setiap push ke `main` akan otomatis di-deploy ulang oleh Railway/Vercel.
 
 ## API ringkas
-`POST /api/auth/login` · `POST /api/auth/register` · `GET /api/auth/register-info` · `POST /api/users/{id}/approve` · `POST|GET|DELETE /api/activities/{id}/proof` · `PUT /api/settings/lists` · `GET /api/meta` · `GET|POST /api/resellers` · `GET|PUT|DELETE /api/resellers/{id}` · `POST /api/resellers/{id}/stage` · `GET|POST /api/activities` · `GET|PUT /api/activities/{id}` (detail invoice / ubah status pesanan) · `GET /api/orders?month=YYYY-MM&status=` · `POST /api/activities/{id}/resolve` · `DELETE /api/activities/{id}` · `GET|PUT /api/cms` · `GET|PUT /api/settings` · `GET /api/performance?granularity=week|month&n=8` atau `?from=…&to=…&granularity=day|week|month` · `GET /api/dashboard?from=YYYY-MM-DD&to=YYYY-MM-DD` (atau `period=30|90|365|all`) · `GET|POST|PUT|DELETE /api/users` · `POST /api/admin/seed` · `POST /api/admin/wipe`
+`POST /api/auth/login` · `POST /api/auth/register` · `GET /api/auth/register-info` · `POST /api/users/{id}/approve` · `POST|GET|DELETE /api/activities/{id}/proof[?kind=shipping]` (bukti transfer / bukti ongkos kirim) · `PUT /api/settings/lists` · `GET /api/meta` · `GET|POST /api/resellers` · `GET|PUT|DELETE /api/resellers/{id}` · `POST /api/resellers/{id}/stage` · `GET|POST /api/activities` · `GET|PUT /api/activities/{id}` (detail invoice / ubah status pesanan) · `GET /api/orders?month=YYYY-MM&status=` · `POST /api/activities/{id}/resolve` · `DELETE /api/activities/{id}` · `GET|PUT /api/cms` · `GET|PUT /api/settings` · `GET /api/performance?granularity=week|month&n=8` atau `?from=…&to=…&granularity=day|week|month` · `GET /api/dashboard?from=YYYY-MM-DD&to=YYYY-MM-DD` (atau `period=30|90|365|all`) · `GET|POST|PUT|DELETE /api/users` · `POST /api/admin/seed` · `POST /api/admin/wipe`

@@ -48,6 +48,7 @@ export function StoreProvider({ children }) {
     admin: user?.role === 'admin',
     deleteReseller: ['admin', 'crm'].includes(user?.role),
     orderStatus: ['admin', 'crm', 'gudang'].includes(user?.role),
+    shipProof: ['admin', 'crm', 'cs', 'gudang'].includes(user?.role),
     gudang: user?.role === 'gudang',
   }), [user])
 

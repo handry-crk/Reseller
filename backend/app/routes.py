@@ -415,7 +415,8 @@ async def list_orders(month: str | None = None, status: str | None = None, _: di
             "totals": {"orders": len(rows), "packs": sum(a.get("qty", 0) for a in rows), "revenue": sum(a.get("amount", 0) for a in rows),
                        "shipping": sum(a.get("shippingFee", 0) for a in rows), "discount": sum(a.get("discount", 0) for a in rows),
                        "totalPaid": sum(a.get("totalPaid", 0) for a in rows),
-                       "withProof": sum(1 for a in rows if a.get("paymentProof"))}}
+                       "withProof": sum(1 for a in rows if a.get("paymentProof")),
+                       "withShippingProof": sum(1 for a in rows if a.get("shippingProof"))}}
 
 
 @router.delete("/activities/{aid}")
@@ -426,7 +427,7 @@ async def delete_activity(aid: str, user: dict = Depends(require("admin", "crm")
     if a.get("type") == "stage":
         raise HTTPException(403, "Riwayat tahap tidak bisa dihapus")
     await get_db().activities.delete_one({"_id": aid})
-    await get_db().proofs.delete_one({"_id": aid})
+    await get_db().proofs.delete_many({"_id": {"$in": [aid, aid + ":ship"]}})
     if a.get("type") == "order":
         r = await get_db().resellers.find_one({"_id": a["resellerId"]})
         if r:
@@ -459,9 +460,24 @@ async def write_cms(body: CmsIn, _: dict = Depends(require(*CMS_ROLES))):
     return await get_cms()
 
 
+# Jenis bukti per pesanan: transfer pembayaran, dan ongkos kirim (resi/nota ekspedisi).
+PROOF_KINDS = {"payment": {"field": "paymentProof", "suffix": "", "label": "Bukti transfer", "roles": WRITE_ROLES},
+               "shipping": {"field": "shippingProof", "suffix": ":ship", "label": "Bukti ongkos kirim", "roles": (*WRITE_ROLES, "gudang")}}
+
+
+def proof_kind(kind: str) -> dict:
+    if kind not in PROOF_KINDS:
+        raise HTTPException(422, "Jenis bukti tidak dikenal")
+    return PROOF_KINDS[kind]
+
+
 @router.post("/activities/{aid}/proof")
-async def upload_proof(aid: str, body: ProofIn, user: dict = Depends(require(*WRITE_ROLES))):
-    """Upload / ganti bukti transfer sebuah pesanan (gambar JPG/PNG/WebP atau PDF, maks 2 MB)."""
+async def upload_proof(aid: str, body: ProofIn, kind: str = "payment", user: dict = Depends(current_user)):
+    """Upload / ganti bukti sebuah pesanan (gambar JPG/PNG/WebP atau PDF, maks 2 MB).
+    kind=payment (bukti transfer) atau kind=shipping (bukti ongkos kirim; Gudang juga boleh)."""
+    k = proof_kind(kind)
+    if user["role"] not in k["roles"]:
+        raise HTTPException(403, "Anda tidak punya akses untuk tindakan ini")
     a = await get_db().activities.find_one({"_id": aid, "type": "order"})
     if not a:
         raise HTTPException(404, "Pesanan tidak ditemukan")
@@ -480,25 +496,28 @@ async def upload_proof(aid: str, body: ProofIn, user: dict = Depends(require(*WR
     if not sig:
         raise HTTPException(422, "Isi file tidak sesuai formatnya")
     meta_ = {"name": body.name[:200], "mime": body.mime, "size": len(raw), "uploadedAt": now_iso(), "uploadedBy": user["name"]}
-    await get_db().proofs.replace_one({"_id": aid}, {"_id": aid, "data": body.data, **meta_}, upsert=True)
-    await get_db().activities.update_one({"_id": aid}, {"$set": {"paymentProof": meta_}})
+    pid = aid + k["suffix"]
+    await get_db().proofs.replace_one({"_id": pid}, {"_id": pid, "data": body.data, **meta_}, upsert=True)
+    await get_db().activities.update_one({"_id": aid}, {"$set": {k["field"]: meta_}})
     return public(await get_db().activities.find_one({"_id": aid}))
 
 
 @router.get("/activities/{aid}/proof")
-async def get_proof(aid: str, _: dict = Depends(current_user)):
-    p = await get_db().proofs.find_one({"_id": aid})
+async def get_proof(aid: str, kind: str = "payment", _: dict = Depends(current_user)):
+    k = proof_kind(kind)
+    p = await get_db().proofs.find_one({"_id": aid + k["suffix"]})
     if not p:
-        raise HTTPException(404, "Bukti transfer belum diupload")
+        raise HTTPException(404, k["label"] + " belum diupload")
     return Response(content=base64.b64decode(p["data"]), media_type=p["mime"],
                     headers={"Content-Disposition": f'inline; filename="bukti-{aid}"', "X-Content-Type-Options": "nosniff",
-                             "Cache-Control": "private, max-age=300"})
+                             "Cache-Control": "private, no-store"})
 
 
 @router.delete("/activities/{aid}/proof")
-async def delete_proof(aid: str, _: dict = Depends(require("admin", "crm"))):
-    await get_db().proofs.delete_one({"_id": aid})
-    await get_db().activities.update_one({"_id": aid}, {"$set": {"paymentProof": None}})
+async def delete_proof(aid: str, kind: str = "payment", _: dict = Depends(require("admin", "crm"))):
+    k = proof_kind(kind)
+    await get_db().proofs.delete_one({"_id": aid + k["suffix"]})
+    await get_db().activities.update_one({"_id": aid}, {"$set": {k["field"]: None}})
     return {"ok": True}
 
 

@@ -28,8 +28,15 @@ async function prepare(file) {
   } finally { URL.revokeObjectURL(url) }
 }
 
-/** Kotak upload bukti transfer untuk satu pesanan. */
-export function ProofUpload({ order, onUploaded, compact }) {
+export const KINDS = {
+  payment: { field: 'paymentProof', q: '', label: 'bukti transfer', short: 'bukti TF' },
+  shipping: { field: 'shippingProof', q: '?kind=shipping', label: 'bukti ongkos kirim', short: 'bukti ongkir' },
+}
+const cap = (t) => t[0].toUpperCase() + t.slice(1)
+
+/** Kotak upload bukti (transfer / ongkos kirim) untuk satu pesanan. */
+export function ProofUpload({ order, onUploaded, compact, kind = 'payment' }) {
+  const K = KINDS[kind]
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
   const [preview, setPreview] = useState(null)
@@ -42,19 +49,20 @@ export function ProofUpload({ order, onUploaded, compact }) {
     try {
       const p = await prepare(file)
       if (p.mime.startsWith('image/')) setPreview(URL.createObjectURL(p.blob))
-      const updated = await api(`/api/activities/${order.id}/proof`, { method: 'POST', body: { name: p.name, mime: p.mime, data: await toBase64(p.blob) } })
+      const updated = await api(`/api/activities/${order.id}/proof${K.q}`, { method: 'POST', body: { name: p.name, mime: p.mime, data: await toBase64(p.blob) } })
       onUploaded?.(updated)
     } catch (ex) { setErr(ex.message); setPreview(null) } finally { setBusy(false) }
   }
-  const has = !!order.paymentProof
+  const proof = order[K.field]
+  const has = !!proof
   return (
     <div className={compact ? '' : 'rounded-lg border border-dashed border-brick bg-white p-4'}>
-      {!compact && <div className="text-[13px] font-bold mb-1">Bukti transfer</div>}
-      {has && !compact && <div className="text-xs text-green-700 mb-2">✓ Sudah diupload: {order.paymentProof.name} ({fmtSize(order.paymentProof.size)}) oleh {order.paymentProof.uploadedBy}</div>}
-      {preview && <img src={preview} alt="Pratinjau bukti transfer" className="max-h-40 rounded border border-line mb-2" />}
-      <input ref={input} type="file" accept="image/*,application/pdf" capture={undefined} className="hidden" aria-label="Pilih file bukti transfer" onChange={onFile} />
+      {!compact && <div className="text-[13px] font-bold mb-1">{cap(K.label)}</div>}
+      {has && !compact && <div className="text-xs text-green-700 mb-2">✓ Sudah diupload: {proof.name} ({fmtSize(proof.size)}) oleh {proof.uploadedBy}</div>}
+      {preview && <img src={preview} alt={"Pratinjau " + K.label} className="max-h-40 rounded border border-line mb-2" />}
+      <input ref={input} type="file" accept="image/*,application/pdf" capture={undefined} className="hidden" aria-label={"Pilih file " + K.label} onChange={onFile} />
       <button type="button" className={'btn ' + (compact ? 'btn-sm' : '')} disabled={busy} onClick={() => input.current?.click()}>
-        {busy ? 'Mengupload…' : has ? 'Ganti bukti' : 'Upload bukti transfer'}
+        {busy ? 'Mengupload…' : has ? 'Ganti bukti' : 'Upload ' + K.label}
       </button>
       {!compact && <div className="text-[11px] text-ink-3 mt-1">Foto (JPG/PNG) atau PDF, maks 2 MB. Foto dikecilkan otomatis.</div>}
       {err && <div className="note mt-2">{err}</div>}
@@ -63,30 +71,32 @@ export function ProofUpload({ order, onUploaded, compact }) {
 }
 
 /** Tombol "Lihat bukti" yang membuka pratinjau (butuh login, jadi file diambil dengan token). */
-export function ProofView({ order, canDelete, onDeleted }) {
+export function ProofView({ order, canDelete, onDeleted, kind = 'payment' }) {
+  const K = KINDS[kind]
+  const proof = order[K.field]
   const [url, setUrl] = useState(null)
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => () => url && URL.revokeObjectURL(url), [url])
-  if (!order.paymentProof) return null
+  if (!proof) return null
   const open = async () => {
     setErr(''); setBusy(true)
-    try { setUrl(URL.createObjectURL(await apiBlob(`/api/activities/${order.id}/proof`))) } catch (e) { setErr(e.message) } finally { setBusy(false) }
+    try { setUrl(URL.createObjectURL(await apiBlob(`/api/activities/${order.id}/proof${K.q}`))) } catch (e) { setErr(e.message) } finally { setBusy(false) }
   }
-  const isPdf = order.paymentProof.mime === 'application/pdf'
+  const isPdf = proof.mime === 'application/pdf'
   return (
     <>
       <button type="button" className="link text-xs" onClick={open} disabled={busy}>{busy ? 'memuat…' : 'Lihat bukti'}</button>
       {err && <span className="text-xs text-brick ml-1">{err}</span>}
-      {url && <div className="fixed inset-0 z-[60] bg-ink/60 grid place-items-center p-4" onClick={() => setUrl(null)} role="dialog" aria-label="Bukti transfer">
+      {url && <div className="fixed inset-0 z-[60] bg-ink/60 grid place-items-center p-4" onClick={() => setUrl(null)} role="dialog" aria-label={cap(K.label)}>
         <div className="bg-white rounded-xl p-4 max-w-[min(900px,95vw)] max-h-[92vh] overflow-auto" onClick={e => e.stopPropagation()}>
-          <div className="flex items-center gap-3 mb-3"><b className="text-sm mr-auto">{order.invoiceNo} · bukti transfer</b>
-            <a className="btn btn-sm" href={url} download={order.paymentProof.name}>Unduh</a>
-            {canDelete && <button className="btn btn-danger btn-sm" onClick={async () => { await api(`/api/activities/${order.id}/proof`, { method: 'DELETE' }); setUrl(null); onDeleted?.() }}>Hapus</button>}
+          <div className="flex items-center gap-3 mb-3"><b className="text-sm mr-auto">{order.invoiceNo} · {K.label}</b>
+            <a className="btn btn-sm" href={url} download={proof.name}>Unduh</a>
+            {canDelete && <button className="btn btn-danger btn-sm" onClick={async () => { await api(`/api/activities/${order.id}/proof${K.q}`, { method: 'DELETE' }); setUrl(null); onDeleted?.() }}>Hapus</button>}
             <button className="btn btn-ghost btn-sm" onClick={() => setUrl(null)}>Tutup</button></div>
-          {isPdf ? <iframe title="Bukti transfer PDF" src={url} className="w-[80vw] max-w-[860px] h-[75vh] border border-line rounded" />
-            : <img src={url} alt="Bukti transfer" className="max-w-full max-h-[78vh] mx-auto" />}
-          <div className="text-[11px] text-ink-3 mt-2">{order.paymentProof.name} · diupload {order.paymentProof.uploadedBy} · {(order.paymentProof.uploadedAt || '').slice(0, 16).replace('T', ' ')}</div>
+          {isPdf ? <iframe title={cap(K.label) + " PDF"} src={url} className="w-[80vw] max-w-[860px] h-[75vh] border border-line rounded" />
+            : <img src={url} alt={cap(K.label)} className="max-w-full max-h-[78vh] mx-auto" />}
+          <div className="text-[11px] text-ink-3 mt-2">{proof.name} · diupload {proof.uploadedBy} · {(proof.uploadedAt || '').slice(0, 16).replace('T', ' ')}</div>
         </div>
       </div>}
     </>
