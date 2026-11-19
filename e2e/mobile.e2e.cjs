@@ -6,7 +6,7 @@ const res = []; const ok = (c, m) => { res.push(!!c); console.log((c ? '✓ ' : 
   const b = await chromium.launch(); const errs = []
   for (const [label, vp] of [['HP 390×844', { width: 390, height: 844 }], ['HP kecil 360×640', { width: 360, height: 640 }]]) {
     console.log('\n== ' + label)
-    const ctx = await b.newContext({ viewport: vp, isMobile: true, hasTouch: true, deviceScaleFactor: 2 })
+    const ctx = await b.newContext({ viewport: vp, isMobile: true, hasTouch: true, deviceScaleFactor: 2, reducedMotion: 'reduce' })
     const p = await ctx.newPage(); p.on('pageerror', e => errs.push(e.message))
     await p.goto(U); await p.fill('input[type=email]', 'admin@crk.local'); await p.fill('input[type=password]', 'admin123'); await p.click('button:has-text("Masuk")')
     await p.waitForSelector('text=Reseller Dashboard')

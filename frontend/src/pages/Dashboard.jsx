@@ -7,6 +7,7 @@ import { Link } from 'react-router-dom'
 import { api, fmtN, fmtRp } from '../lib/api'
 import { useStore } from '../lib/store'
 import { useDrawer } from '../lib/useDrawer'
+import { Skeleton, useFlashNew } from '../lib/motion'
 
 export default function Dashboard() {
   const { resellers, can, meta, stageOf } = useStore()
@@ -26,7 +27,8 @@ export default function Dashboard() {
     api('/api/dashboard' + q).then(x => { if (alive) { setD(x); setErr('') } }).catch(e => alive && setErr(e.message))
     return () => { alive = false }
   }, [range.from, range.to, resellers]) // eslint-disable-line
-  if (!d) return <Empty>{err || 'Memuat dashboard…'}</Empty>
+  const flash = useFlashNew(d ? d.newResellers.map(r => r.id) : [], d ? `${d.range.from}|${d.range.to}` : 'loading')
+  if (!d) return err ? <Empty>{err}</Empty> : <Skeleton label="Memuat dashboard…" />
   const label = rangeLabel(d.range.from, d.range.to)
   const cmp = d.compare
   const vs = cmp ? `vs ${rangeLabel(cmp.from, cmp.to)}` : ''
@@ -74,7 +76,7 @@ export default function Dashboard() {
           <Link to="/reseller?sort=new" className="btn btn-sm">Lihat semua →</Link>
         </div>
         {d.newResellers.length ? <div className="overflow-x-auto"><table className="table"><thead><tr><th>Reseller</th><th>Tgl Daftar</th><th>Area</th><th>Channel</th><th>PIC</th><th>Tahap</th><th>Order</th></tr></thead><tbody>
-          {d.newResellers.map(r => <tr key={r.id}>
+          {d.newResellers.map(r => <tr key={r.id} className={flash(r.id)}>
             <td><button className="link" onClick={() => openDetail(r.id)}>{r.name}</button>{r.joinedDate === d.today && <span className="tag tag-good ml-1.5">Hari ini</span>}</td>
             <td className="whitespace-nowrap">{r.joinedDate}</td><td>{r.area || '-'}</td><td>{r.channel || '-'}</td><td>{r.pic || '-'}</td>
             <td><span className="tag">{stageOf(r.stage).label}</span></td>

@@ -9,7 +9,7 @@
 }
 
 @layer components {
-  .btn { @apply inline-flex items-center justify-center gap-1 rounded-full border border-brick px-4 py-2 text-[13px] font-semibold text-brick transition hover:bg-brick-soft disabled:opacity-50 disabled:cursor-not-allowed; }
+  .btn { @apply inline-flex items-center justify-center gap-1 rounded-full border border-brick px-4 py-2 text-[13px] font-semibold text-brick transition duration-150 hover:bg-brick-soft active:scale-[.97] disabled:opacity-50 disabled:cursor-not-allowed; }
   .btn-primary { @apply bg-brick text-cream hover:bg-brick-dark; }
   .btn-ghost { @apply border-line text-ink-2; }
   .btn-danger { @apply border-brick text-brick; }
@@ -33,5 +33,21 @@
   .link { @apply text-brick font-bold underline cursor-pointer bg-transparent border-0 p-0 text-left; }
   .note { @apply text-xs text-ink-2 bg-brick-soft border-l-[3px] border-brick px-3 py-2 rounded-r-lg; }
   .pre { @apply whitespace-pre-wrap text-[13px] bg-white border border-line rounded-lg p-3; }
+  .skel { @apply rounded bg-cream-dark; animation: skel 1.2s ease-in-out infinite; }
+  .page-in { animation: page-in .28s ease-out; }
+  .table tr.row-new td { animation: row-new 2.6s ease-out; }
   .kpi-v { @apply text-[clamp(1.25rem,6vw,1.875rem)] md:text-3xl font-extrabold text-brick leading-none my-2 tabular-nums break-words; }
 }
+
+/* ===== Animasi halus ===== */
+@keyframes page-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes skel { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+@keyframes row-new { 0%, 35% { background-color: #F3E2A8; } 100% { background-color: transparent; } }
+@keyframes bar-in { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.bar-fill { transform-origin: left; animation: bar-in .5s cubic-bezier(.2, .7, .2, 1) both; transition: width .4s cubic-bezier(.2, .7, .2, 1); }
+
+/* Pengguna yang memilih "kurangi gerakan" & saat mencetak: tanpa animasi. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+@media print { *, *::before, *::after { animation: none !important; transition: none !important; } }

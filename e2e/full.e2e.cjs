@@ -17,7 +17,7 @@ async function api(path, { method = 'GET', body, token } = {}) {
   return { status: r.status, data }
 }
 async function newPage(b, vp = { width: 1400, height: 950 }) {
-  const ctx = await b.newContext({ viewport: vp })
+  const ctx = await b.newContext({ viewport: vp, reducedMotion: 'reduce' })
   const p = await ctx.newPage()
   p.on('pageerror', e => errors.push(`[${section}] PAGE: ${e.message}`))
   p.on('console', m => { if (m.type() === 'error' && !/401|403|409|422|Failed to load resource/.test(m.text())) errors.push(`[${section}] CONSOLE: ${m.text()}`) })
@@ -581,6 +581,43 @@ const toast = async (p) => { await p.waitForTimeout(250); return (await p.locato
   await nav(a, 'Data Reseller'); await a.waitForTimeout(500)
   ok((await a.locator('img[src=x]').count()) === 0, 'nama berisi HTML tidak dieksekusi (aman XSS)')
   await api('/api/resellers/' + xss.id, { method: 'DELETE', token: T })
+
+  // ================= ANIMASI HALUS =================
+  sec('Animasi halus')
+  const mctx = await b.newContext({ viewport: { width: 1400, height: 950 } })  // gerakan aktif
+  const mo = await mctx.newPage()
+  mo.on('pageerror', e => errors.push(`[${section}] PAGE: ${e.message}`))
+  await mo.route('**/api/dashboard*', async r => { await new Promise(x => setTimeout(x, 500)); r.continue() })
+  await login(mo, 'admin@crk.local', 'admin123')
+  await mo.goto(U); ok(await mo.waitForSelector('[data-testid=skeleton]', { timeout: 4000 }).then(() => true).catch(() => false), 'kerangka (skeleton) tampil saat dashboard dimuat')
+  await mo.waitForSelector('.kpi-v [data-final]')
+  const early = await mo.locator('.kpi-v [data-final]').nth(3).textContent()
+  await mo.waitForTimeout(900)
+  const kp = mo.locator('.kpi-v [data-final]')
+  const finals = await kp.evaluateAll(els => els.map(e => [e.textContent, e.dataset.final, e.getAttribute('aria-label')]))
+  ok(finals.length === 4 && finals.every(([t, f, l]) => t === f && l === f), 'angka KPI selesai menghitung tepat di nilai akhir: ' + finals.map(x => x[0]).join(' · '))
+  const dM = (await api('/api/dashboard', { token: T })).data
+  ok(finals[3][0] === rp(dM.kpi.revenue) && early !== undefined, `nilai akhir = data API (${rp(dM.kpi.revenue)}); saat mulai tampil "${early}"`)
+  ok((await mo.locator('.bar-fill').count()) > 3 && (await mo.locator('.bar-fill').first().evaluate(e => getComputedStyle(e).animationName)) === 'bar-in', 'batang grafik tumbuh dari kiri')
+  ok((await mo.locator('main .page-in').evaluate(e => getComputedStyle(e).animationName)) === 'page-in', 'halaman muncul dengan transisi halus')
+  await nav(mo, 'Data Reseller'); await mo.waitForSelector('table tbody tr')
+  ok((await mo.locator('tr.row-new').count()) === 0, 'tidak ada sorotan saat daftar pertama kali dibuka')
+  const fl = await api('/api/resellers', { method: 'POST', token: T, body: { name: 'Toko Sorot E2E', phone: '0877' + String(Date.now()).slice(-8) } })
+  await mo.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')) })
+  await mo.waitForSelector('tr.row-new', { timeout: 5000 }).catch(() => {})
+  ok((await mo.locator('tr.row-new').count()) === 1 && (await mo.locator('tr.row-new').textContent()).includes('Toko Sorot E2E'), 'reseller yang baru masuk disorot sebentar')
+  await mo.waitForTimeout(3000)
+  ok((await mo.locator('tr.row-new').count()) === 0, 'sorotan hilang sendiri setelah ±2,6 detik')
+  await mo.click('table tbody tr:first-child button:has-text("Detail")'); await mo.waitForTimeout(500)
+  ok((await drawer(mo).count()) === 1 && (await mo.locator('div.fixed.inset-0.bg-ink\\/35').evaluate(e => getComputedStyle(e).opacity)) === '1', 'drawer bergeser masuk + latar meredup')
+  await api('/api/resellers/' + fl.data.id, { method: 'DELETE', token: T })
+  const red = await (await b.newContext({ reducedMotion: 'reduce' })).newPage()
+  await login(red, 'admin@crk.local', 'admin123'); await red.waitForSelector('.kpi-v [data-final]')
+  const redNow = await red.locator('.kpi-v [data-final]').evaluateAll(els => els.every(e => e.textContent === e.dataset.final))
+  const redDur = await red.locator('.bar-fill').first().evaluate(e => parseFloat(getComputedStyle(e).animationDuration))
+  ok(redNow && redDur < 0.01, 'mode "kurangi gerakan": angka langsung final & animasi dimatikan')
+  await a.goto(U + '/invoice/' + (await api('/api/orders', { token: T })).data.orders[0].id); await a.waitForSelector('text=INVOICE')
+  ok((await a.locator('.page-in, .bar-fill, [data-final]').count()) === 0, 'halaman Invoice tanpa animasi')
 
   // ================= RINGKASAN =================
   await b.close()

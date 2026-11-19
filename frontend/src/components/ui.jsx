@@ -1,4 +1,5 @@
 import { fmtN } from '../lib/api'
+import { CountUp } from '../lib/motion'
 
 export const StatusTag = ({ s }) => (
   <span className={'tag ' + (s === 'Aktif' ? 'tag-good' : s === 'Pasif' ? 'tag-warn' : s === 'Churn' ? '' : 'tag-muted')}>{s}</span>
@@ -12,7 +13,7 @@ export function Bar({ label, value, max, extra }) {
   return (
     <div className="grid grid-cols-[150px_1fr_minmax(56px,auto)] items-center gap-2.5 text-[12.5px]" title={`${label}: ${value}`}>
       <div className="truncate text-ink-2">{label}</div>
-      <div className="h-3.5 rounded bg-cream-dark overflow-hidden"><div className="h-full bg-brick rounded-r min-w-[2px] transition-all" style={{ width: pct + '%' }} /></div>
+      <div className="h-3.5 rounded bg-cream-dark overflow-hidden"><div className="h-full bg-brick rounded-r min-w-[2px] bar-fill" style={{ width: pct + '%' }} /></div>
       <div className="text-right font-bold tabular-nums whitespace-nowrap text-xs">{extra ?? fmtN(value)}</div>
     </div>
   )
@@ -31,7 +32,7 @@ export function Delta({ d, title, small }) {
 }
 
 export function Kpi({ label, value, sub, delta, deltaNote }) {
-  return <div className="card"><div className="text-[13px] font-bold">{label}</div><div className="kpi-v">{value}</div><div className="text-xs text-ink-2">{sub}</div>
+  return <div className="card"><div className="text-[13px] font-bold">{label}</div><div className="kpi-v"><CountUp value={value} /></div><div className="text-xs text-ink-2">{sub}</div>
     {delta && <div className="mt-1.5 flex flex-wrap items-center gap-1.5"><Delta d={delta} /><span className="text-[11px] text-ink-3">{deltaNote}</span></div>}</div>
 }
 
@@ -40,8 +41,8 @@ export const Empty = ({ children }) => <div className="p-7 text-center text-ink-
 export function Drawer({ open, onClose, children }) {
   return (
     <>
-      <div className={'fixed inset-0 bg-ink/35 z-40 ' + (open ? '' : 'hidden')} onClick={onClose} />
-      <div className={'fixed top-0 bottom-0 right-0 h-[100dvh] max-h-[100dvh] w-[min(660px,100vw)] bg-cream z-50 overflow-y-auto overscroll-contain px-6 pt-6 pb-0 shadow-2xl transition-transform ' + (open ? '' : 'translate-x-full')}>
+      <div className={'fixed inset-0 bg-ink/35 z-40 transition-opacity duration-200 ' + (open ? 'opacity-100' : 'opacity-0 pointer-events-none')} onClick={onClose} aria-hidden="true" />
+      <div className={'fixed top-0 bottom-0 right-0 h-[100dvh] max-h-[100dvh] w-[min(660px,100vw)] bg-cream z-50 overflow-y-auto overscroll-contain px-6 pt-6 pb-0 shadow-2xl transition-transform duration-300 ease-out ' + (open ? '' : 'translate-x-full')}>
         <button className="absolute top-4 right-5 text-2xl text-ink-2" onClick={onClose} aria-label="Tutup">×</button>
         {open && <div className="pb-6">{children}</div>}
       </div>

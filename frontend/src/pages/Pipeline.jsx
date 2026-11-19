@@ -3,6 +3,7 @@ import { PageHead } from '../components/Layout'
 import { api, fmtN } from '../lib/api'
 import { Empty, Select } from '../components/ui'
 import { useStore } from '../lib/store'
+import { Skeleton } from '../lib/motion'
 import { useDrawer } from '../lib/useDrawer'
 
 export default function Pipeline() {
@@ -59,7 +60,7 @@ function History({ openDetail, today, stages, resellers }) {
   const [month, setMonth] = useState(today.slice(0, 7))
   const [d, setD] = useState(null)
   useEffect(() => { api('/api/stage-history' + (month ? '?month=' + month : '')).then(setD).catch(() => {}) }, [month, resellers])
-  if (!d) return <Empty>Memuat riwayat…</Empty>
+  if (!d) return <Skeleton kpis={0} blocks={1} label="Memuat riwayat…" />
   return (
     <div className="card">
       <div className="flex flex-wrap items-center gap-3 mb-3">

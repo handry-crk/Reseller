@@ -5,6 +5,7 @@ import { Empty, Select, StatusTag, TierTag } from '../components/ui'
 import { fmtN, fmtRp } from '../lib/api'
 import { useStore } from '../lib/store'
 import { useDrawer } from '../lib/useDrawer'
+import { useFlashNew } from '../lib/motion'
 
 export default function Resellers() {
   const { meta, resellers, can, stageOf, notify } = useStore()
@@ -23,6 +24,7 @@ export default function Resellers() {
   ).sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name, 'id') : sort === 'revenue' ? b.totalRevenue - a.totalRevenue
     : sort === 'last' ? (b.lastOrderDate || '').localeCompare(a.lastOrderDate || '') : ((b.joinedDate || '') + (b.createdAt || '')).localeCompare((a.joinedDate || '') + (a.createdAt || ''))
   ), [resellers, q, f.stage, f.tier, f.pic, f.status, sort])
+  const flash = useFlashNew(resellers.map(r => r.id))
   const newCount = rows.filter(isNew).length
 
   const exportCSV = () => {
@@ -50,7 +52,7 @@ export default function Resellers() {
         </div>
         {rows.length ? <div className="overflow-x-auto"><table className="table"><thead><tr>
           <th>Nama</th><th>Tgl Daftar</th><th>WA</th><th>Area</th><th>Channel</th><th>PIC</th><th>Tahap</th><th>Tier</th><th>Status</th><th className="num">Order</th><th className="num">Revenue</th><th>Terakhir</th><th></th></tr></thead><tbody>
-          {rows.map(r => <tr key={r.id}>
+          {rows.map(r => <tr key={r.id} className={flash(r.id)}>
             <td><b>{r.name}</b>{isNew(r) && <span className="tag tag-good ml-1.5">Baru</span>}</td><td className="whitespace-nowrap">{r.joinedDate || '-'}</td><td>{r.phone || '-'}</td><td>{r.area || '-'}</td><td>{r.channel || '-'}</td><td>{r.pic || '-'}</td>
             <td><span className="tag">{stageOf(r.stage).label}</span></td><td><TierTag t={r.tier} /></td><td><StatusTag s={r.status} /></td>
             <td className="num">{fmtN(r.ordersCount)}</td><td className="num">{fmtRp(r.totalRevenue)}</td><td className="whitespace-nowrap">{r.lastOrderDate || '-'}</td>

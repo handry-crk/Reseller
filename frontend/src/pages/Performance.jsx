@@ -5,6 +5,7 @@ import { PageHead } from '../components/Layout'
 import { Delta, Empty, Kpi } from '../components/ui'
 import { api, fmtN, fmtRp } from '../lib/api'
 import { useStore } from '../lib/store'
+import { Skeleton } from '../lib/motion'
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des']
 const dd = (iso) => { const [y, m, d] = iso.split('-').map(Number); return { y, m, d } }
@@ -121,7 +122,7 @@ export default function Performance() {
   const ready = d && (custom ? !!d.summary : !d.summary) && d.granularity === g
   if (!ready) return (<>
     <PageHead title="<b>Performa</b> Reseller">{controls}</PageHead>
-    {err ? <div className="note" role="alert">{err}</div> : <Empty>Memuat performa…</Empty>}</>)
+    {err ? <div className="note" role="alert">{err}</div> : <Skeleton label="Memuat performa…" />}</>)
   const cur = custom ? { ...d.summary, toDate: d.summary.to, partial: false } : d.series[d.series.length - 1]
   const cmpNote = custom ? `${rangeLabel(cur.from, cur.to)} vs ${rangeLabel(cur.compareFrom, cur.compareTo)}`
     : cur.partial ? `${unit} ini s/d ${short(cur.toDate)} vs ${short(cur.compareFrom)}–${short(cur.compareTo)}`

@@ -7,6 +7,7 @@ import { ProofUpload, ProofView } from '../components/Proof'
 import { Bar, Drawer, Empty, Kpi, Select } from '../components/ui'
 import { api, fmtN, fmtRp } from '../lib/api'
 import { useStore } from '../lib/store'
+import { Skeleton, useFlashNew } from '../lib/motion'
 import { useDrawer } from '../lib/useDrawer'
 
 const STATUS_CLS = { to_ship: 'tag-warn', shipping: '', completed: 'tag-good' }
@@ -33,10 +34,11 @@ export default function Orders() {
   const [d, setD] = useState(null)
   const [busy, setBusy] = useState('')
   const [creating, setCreating] = useState(false)
-  const load = () => api(`/api/orders?${isAll ? '' : `from=${range.from}&to=${range.to}`}${status ? '&status=' + status : ''}`).then(setD).catch(() => {})
+  const load = () => api(`/api/orders?${isAll ? '' : `from=${range.from}&to=${range.to}`}${status ? '&status=' + status : ''}`).then(x => setD({ ...x, key: `${range.from}|${range.to}|${status}` })).catch(() => {})
   useEffect(() => { load() }, [range.from, range.to, status, resellers]) // eslint-disable-line
   const rows = useMemo(() => (d?.orders || []).filter(o => !q || [o.resellerName, o.invoiceNo, o.note].join(' ').toLowerCase().includes(q.toLowerCase())), [d, q])
-  if (!d) return <Empty>Memuat pesanan…</Empty>
+  const flash = useFlashNew(d ? d.orders.map(o => o.id) : [], d ? d.key : 'loading')
+  if (!d) return <Skeleton blocks={1} label="Memuat pesanan…" />
   const statuses = d.statuses
   const setSt = async (o, st) => {
     setBusy(o.id)
@@ -69,7 +71,7 @@ export default function Orders() {
         </div>
         {rows.length ? <div className="overflow-x-auto"><table className="table"><thead><tr>
           <th>Invoice</th><th>Tgl Pesan</th><th>Reseller</th><th>Produk</th><th className="num">Pack</th><th className="num">Dibayar</th><th>Bukti TF</th><th>Bukti Ongkir</th><th>Status</th><th>Tgl Diterima</th><th>Catatan</th><th></th></tr></thead><tbody>
-          {rows.map(o => <tr key={o.id}>
+          {rows.map(o => <tr key={o.id} className={flash(o.id)}>
             <td className="font-mono text-xs whitespace-nowrap">{o.invoiceNo || '-'}</td>
             <td className="whitespace-nowrap">{o.date}</td>
             <td><button className="link" onClick={() => openDetail(o.resellerId)}>{o.resellerName}</button><br /><small className="text-ink-3">{o.pic}</small></td>
