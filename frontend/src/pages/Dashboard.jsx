@@ -9,7 +9,7 @@ import { useStore } from '../lib/store'
 import { useDrawer } from '../lib/useDrawer'
 
 export default function Dashboard() {
-  const { resellers, can, meta } = useStore()
+  const { resellers, can, meta, stageOf } = useStore()
   const nav = useNavigate()
   const [sp, setSp] = useSearchParams()
   // Periode disimpan di alamat halaman (?p=…&from=…&to=…) agar bisa dibagikan / tetap saat dimuat ulang.
@@ -67,6 +67,20 @@ export default function Dashboard() {
             </button>
           ))}
         </div>
+      </div>
+      <div className="card mt-4" data-testid="new-resellers">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div><h3 className="card-title">Reseller Baru</h3><div className="hint">{isAll ? `${fmtN(d.newResellers.length)} pendaftar terbaru` : `${fmtN(d.newResellersTotal)} reseller didaftarkan pada periode: ${label}`} · terbaru di atas, otomatis terisi setiap ada reseller baru</div></div>
+          <Link to="/reseller?sort=new" className="btn btn-sm">Lihat semua →</Link>
+        </div>
+        {d.newResellers.length ? <div className="overflow-x-auto"><table className="table"><thead><tr><th>Reseller</th><th>Tgl Daftar</th><th>Area</th><th>Channel</th><th>PIC</th><th>Tahap</th><th>Order</th></tr></thead><tbody>
+          {d.newResellers.map(r => <tr key={r.id}>
+            <td><button className="link" onClick={() => openDetail(r.id)}>{r.name}</button>{r.joinedDate === d.today && <span className="tag tag-good ml-1.5">Hari ini</span>}</td>
+            <td className="whitespace-nowrap">{r.joinedDate}</td><td>{r.area || '-'}</td><td>{r.channel || '-'}</td><td>{r.pic || '-'}</td>
+            <td><span className="tag">{stageOf(r.stage).label}</span></td>
+            <td>{r.ordersCount ? <span className="tag tag-good">{fmtN(r.ordersCount)}× · {fmtRp(r.totalRevenue)}</span> : <span className="tag tag-warn">Belum order</span>}</td></tr>)}
+        </tbody></table></div> : <Empty>Tidak ada reseller baru pada periode ini</Empty>}
+        {d.newResellersTotal > d.newResellers.length && <div className="text-xs text-ink-3 mt-2">Menampilkan {d.newResellers.length} terbaru dari {fmtN(d.newResellersTotal)}.</div>}
       </div>
       <div className="grid lg:grid-cols-[2fr_1fr] gap-4 mt-4">
         <div className="card"><h3 className="card-title">Funnel per Tahap</h3><div className="hint">Kondisi hari ini: reseller yang sudah melewati tahap tersebut (kumulatif)</div>

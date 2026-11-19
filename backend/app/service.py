@@ -7,6 +7,16 @@ from .defaults import DEFAULT_CMS, DEFAULT_SETTINGS
 from .rules import enrich
 
 
+def local_date(iso_ts: str) -> str:
+    """Tanggal WIB dari timestamp ISO (createdAt disimpan UTC)."""
+    from zoneinfo import ZoneInfo
+    from .config import TZ
+    try:
+        return datetime.fromisoformat(iso_ts).astimezone(ZoneInfo(TZ)).date().isoformat()
+    except (TypeError, ValueError):
+        return (iso_ts or "")[:10]
+
+
 def new_id() -> str:
     return uuid.uuid4().hex[:12]
 
@@ -66,7 +76,10 @@ async def enriched_resellers(ids: list[str] | None = None) -> list[dict]:
     q = {"_id": {"$in": ids}} if ids is not None else {}
     docs = [public(d) async for d in get_db().resellers.find(q)]
     acts = await activities_by_reseller([d["id"] for d in docs] if ids is not None else None)
-    return [enrich(d, acts.get(d["id"], []), settings, cms) for d in docs]
+    rows = [enrich(d, acts.get(d["id"], []), settings, cms) for d in docs]
+    for r in rows:
+        r["joinedDate"] = local_date(r.get("createdAt", ""))  # tanggal daftar (WIB)
+    return rows
 
 
 async def enriched_reseller(rid: str) -> dict | None:

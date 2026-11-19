@@ -414,6 +414,30 @@ const toast = async (p) => { await p.waitForTimeout(250); return (await p.locato
   await per.selectOption('all'); await a.waitForTimeout(600)
   ok((await a.locator('.kpi-v').nth(3).textContent()) === rp(dash.kpi.revenue), 'kembali ke Semua periode: revenue total')
 
+  // ================= 10z. RESELLER BARU =================
+  sec('Reseller baru')
+  await nav(a, 'Dashboard'); await a.locator('select[aria-label=Periode]').selectOption('all'); await a.waitForSelector('[data-testid=new-resellers]')
+  const nrName = 'Toko Baru E2E ' + Date.now()
+  const nr = await api('/api/resellers', { method: 'POST', token: T, body: { name: nrName, phone: '0899' + String(Date.now()).slice(-8), area: 'Bandung', pic: 'CS 1' } })
+  ok(nr.status === 200 && nr.data.joinedDate === today, 'reseller baru punya tanggal daftar hari ini')
+  const dNew = (await api('/api/dashboard', { token: T })).data
+  ok(dNew.newResellers[0].id === nr.data.id && dNew.newResellers.length <= 10, 'API: reseller terbaru di urutan pertama (maks 10)')
+  await a.reload(); await a.waitForSelector('[data-testid=new-resellers] tbody tr')
+  const nrFirst = await a.locator('[data-testid=new-resellers] tbody tr').first().textContent()
+  ok(nrFirst.includes(nrName) && nrFirst.includes('Hari ini') && nrFirst.includes('Belum order'), 'Dashboard: kartu Reseller Baru menampilkan pendaftar terbaru + label Hari ini & Belum order')
+  await a.locator('select[aria-label=Periode]').selectOption('today'); await a.waitForTimeout(700)
+  const dToday = (await api(`/api/dashboard?from=${today}&to=${today}`, { token: T })).data
+  ok(dToday.newResellersTotal === dToday.kpi.newInPeriod && (await a.locator('[data-testid=new-resellers] tbody tr').count()) === dToday.newResellers.length, `periode Hari ini: ${dToday.newResellersTotal} reseller baru, sama dengan KPI`)
+  await a.locator('select[aria-label=Periode]').selectOption('all'); await a.waitForTimeout(500)
+  await a.click('[data-testid=new-resellers] a:has-text("Lihat semua")'); await a.waitForSelector('select[aria-label=Urutkan]')
+  const rFirst = await a.locator('table tbody tr').first().textContent()
+  ok(rFirst.includes(nrName) && rFirst.includes('Baru') && rFirst.includes(today), 'Data Reseller: urut terbaru, badge Baru & kolom Tgl Daftar')
+  await a.locator('select[aria-label=Urutkan]').selectOption('revenue'); await a.waitForTimeout(300)
+  const topRev = (await api('/api/resellers', { token: T })).data.sort((x, y) => y.totalRevenue - x.totalRevenue)[0]
+  ok(a.url().includes('sort=revenue') && (await a.locator('table tbody tr').first().textContent()).includes(topRev.name), 'urut Revenue tertinggi berfungsi & tersimpan di alamat')
+  await api('/api/resellers/' + nr.data.id, { method: 'DELETE', token: T })
+  await nav(a, 'Dashboard'); await a.waitForTimeout(500)
+
   // ================= 10a. PESANAN: RENTANG TANGGAL =================
   sec('Pesanan: rentang tanggal')
   await nav(a, 'Pesanan'); await a.waitForSelector('[data-testid=orders-range]')

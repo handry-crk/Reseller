@@ -10,6 +10,7 @@ from .defaults import ORDER_STATUSES, STAGES
 from .rules import apply_activity_rules, monthly_revenue, stage_after_order_removed, today
 from . import performance as perf
 from .schemas import ApproveIn, ListsIn, ProofIn, RegisterIn, ActivityIn, ChangePasswordIn, CmsIn, LoginIn, OrderUpdateIn, ResellerIn, SettingsIn, StageIn, UserIn
+from .service import local_date  # noqa: E402
 from .service import (
     activities_by_reseller,
     enriched_reseller,
@@ -585,17 +586,6 @@ def resolve_range(period: str, date_from: str | None, date_to: str | None) -> tu
     return "", ""
 
 
-def local_date(iso_ts: str) -> str:
-    """Tanggal WIB dari timestamp ISO (createdAt disimpan UTC)."""
-    from datetime import datetime as _dt
-    from zoneinfo import ZoneInfo
-    from .config import TZ
-    try:
-        return _dt.fromisoformat(iso_ts).astimezone(ZoneInfo(TZ)).date().isoformat()
-    except (TypeError, ValueError):
-        return (iso_ts or "")[:10]
-
-
 @router.get("/dashboard")
 async def dashboard(period: str = "all", date_from: str | None = Query(None, alias="from"), date_to: str | None = Query(None, alias="to"),
                     _: dict = Depends(current_user)):
@@ -666,11 +656,16 @@ async def dashboard(period: str = "all", date_from: str | None = Query(None, ali
         cur_sum = perf.summarize(all_acts, rows, s0, e0, local_date)
         prev_sum = perf.summarize(all_acts, rows, ps, pe, local_date)
         compare = {"from": ps.isoformat(), "to": pe.isoformat(), "kpi": prev_sum, "delta": perf.delta(cur_sum, prev_sum)}
+    # Reseller baru: yang didaftarkan pada periode (atau 10 terbaru bila semua periode), terbaru di atas.
+    newcomers = sorted((r for r in rows if in_range(r["joinedDate"])), key=lambda r: r.get("createdAt", ""), reverse=True)
+    new_list = [{"id": r["id"], "name": r["name"], "area": r.get("area", ""), "channel": r.get("channel", ""), "pic": r.get("pic", ""),
+                 "stage": r.get("stage", "lead"), "status": r["status"], "joinedDate": r["joinedDate"],
+                 "ordersCount": r["ordersCount"], "totalRevenue": r["totalRevenue"]} for r in newcomers[:10]]
     by_id = {r["id"]: r for r in rows}
     top_ids = sorted((rid for rid, x in per_res.items() if x["revenue"] > 0 and rid in by_id), key=lambda rid: per_res[rid]["revenue"], reverse=True)[:10]
     order_counts = {st["id"]: sum(1 for a in orders_p if a.get("status") == st["id"]) for st in ORDER_STATUSES}
     return {"kpi": kpi, "stages": stage_counts, "funnel": funnel, "tiers": tiers, "monthly": monthly_revenue(all_acts),
-            "orderCounts": order_counts,
+            "orderCounts": order_counts, "newResellers": new_list, "newResellersTotal": len(newcomers),
             "pics": sorted(pics.values(), key=lambda p: p["resellers"], reverse=True), "todo": todo,
             "top": [{"id": rid, "name": by_id[rid]["name"], "area": by_id[rid].get("area", ""), "tier": by_id[rid]["tier"],
                      "ordersCount": per_res[rid]["orders"], "totalPacks": per_res[rid]["packs"], "totalRevenue": per_res[rid]["revenue"],

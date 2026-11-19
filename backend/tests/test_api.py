@@ -494,3 +494,22 @@ async def test_orders_date_range(client):
     assert len(o["orders"]) == 3 and o["backlogOutside"] == 0
     assert len((await client.get("/api/orders?month=2026-10")).json()["orders"]) == 1
     assert (await client.get("/api/orders?from=2026-11-09&to=2026-11-01")).status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_new_resellers_on_dashboard(client):
+    from datetime import timedelta
+    for n in ("Toko Lama", "Toko Tengah", "Toko Baru"):
+        await make_reseller(client, name=n, phone="08" + str(abs(hash(n)))[:9])
+    d = (await client.get("/api/dashboard")).json()
+    assert d["newResellersTotal"] == 3 and len(d["newResellers"]) == 3
+    assert all(x["joinedDate"] == today().isoformat() and x["ordersCount"] == 0 for x in d["newResellers"])
+    rid = d["newResellers"][0]["id"]
+    await client.post("/api/activities", json={"resellerId": rid, "type": "order", "qty": 10, "amount": 238000, "date": today().isoformat()})
+    d = (await client.get(f"/api/dashboard?from={today().isoformat()}&to={today().isoformat()}")).json()
+    assert d["newResellersTotal"] == 3 == d["kpi"]["newInPeriod"]
+    assert next(x for x in d["newResellers"] if x["id"] == rid)["ordersCount"] == 1
+    y = (today() - timedelta(days=1)).isoformat()
+    d = (await client.get(f"/api/dashboard?from={y}&to={y}")).json()
+    assert d["newResellers"] == [] and d["newResellersTotal"] == 0
+    assert (await client.get("/api/resellers")).json()[0]["joinedDate"] == today().isoformat()
