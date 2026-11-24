@@ -224,6 +224,8 @@ const toast = async (p) => { await p.waitForTimeout(250); return (await p.locato
   ok((await api('/api/activities/' + o1.data.activity.id, { method: 'PUT', token: T, body: { date: daysAgo(40) } })).status === 422 || daysAgo(40).slice(0, 7) === daysAgo(3).slice(0, 7), 'tanggal pesanan tidak bisa pindah bulan setelah invoice terbit')
   // invoice
   await a.goto(U + '/invoice/' + newest.id); await a.waitForSelector('text=INVOICE')
+  ok((await a.locator('text=Pembayaran dapat melalui :').count()) === 1 && (await a.locator('[data-testid=invoice-bank]').textContent()) === 'BCA 7773067688 an. PT. Citarasa Kuliner Indonesia', 'invoice: rekening pembayaran BCA tampil')
+  ok((await a.locator('[data-testid=invoice-by]').textContent()) === 'Invoice dibuat oleh: Muhammad Ilham - Channel Development', 'invoice: dibuat oleh Muhammad Ilham - Channel Development')
   const inv = await a.locator('table.w-full').textContent()
   ok(inv.includes('Mozza Balado') && inv.includes(rp(357000)) && inv.includes('Mozza Jagung Bakar') && inv.includes(rp(147000)) && inv.includes('22 pack') && inv.includes(rp(504000)), 'invoice: 2 baris produk, 22 pack, Rp504.000')
   ok((await a.locator('text=Tanggal diterima').locator('..').textContent()).length > 0, 'invoice menampilkan tanggal diterima')

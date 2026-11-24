@@ -55,6 +55,9 @@ async def get_settings() -> dict:
     doc = await get_db().config.find_one({"_id": "settings"})
     merged = {**DEFAULT_SETTINGS, **(doc or {})}
     merged["company"] = {**DEFAULT_SETTINGS["company"], **((doc or {}).get("company") or {})}
+    for k in ("bank", "invoiceBy"):  # dikosongkan di Pengaturan = pakai bawaan, supaya invoice selalu lengkap
+        if not str(merged["company"].get(k) or "").strip():
+            merged["company"][k] = DEFAULT_SETTINGS["company"][k]
     return merged
 
 

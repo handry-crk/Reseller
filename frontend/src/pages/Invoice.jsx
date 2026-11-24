@@ -65,9 +65,9 @@ export default function Invoice() {
         </table>
         {a.note && <div className="mt-4 text-xs text-ink-2"><b>Catatan:</b> {a.note}</div>}
         <div className="mt-4 text-xs text-ink-2">Bukti transfer: <b>{a.paymentProof ? `diterima (${(a.paymentProof.uploadedAt || '').slice(0, 10)})` : 'belum diterima'}</b></div>
-        {c.bank && <div className="mt-6 text-sm"><div className="text-xs font-bold text-ink-3 uppercase tracking-wider mb-1">Pembayaran</div><div className="whitespace-pre-line">{c.bank}</div></div>}
+        {c.bank && <div className="mt-6 text-sm"><div className="text-xs font-bold text-ink-3 uppercase tracking-wider mb-1">Pembayaran dapat melalui :</div><div className="whitespace-pre-line font-semibold" data-testid="invoice-bank">{c.bank}</div></div>}
         {c.invoiceNote && <div className="mt-6 text-xs text-ink-2 border-t border-line pt-4 whitespace-pre-line">{c.invoiceNote}</div>}
-        <div className="mt-10 grid grid-cols-2 text-xs text-ink-3"><div>Dibuat oleh: {a.by || '-'}</div><div className="text-right">Dicetak: {new Date().toLocaleDateString('id-ID')}</div></div>
+        <div className="mt-10 grid grid-cols-2 text-xs text-ink-3"><div data-testid="invoice-by">Invoice dibuat oleh: <b className="text-ink">{c.invoiceBy || a.by || '-'}</b></div><div className="text-right">Dicetak: {new Date().toLocaleDateString('id-ID')}</div></div>
       </div>
     </div>
   )

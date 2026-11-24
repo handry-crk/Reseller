@@ -534,3 +534,17 @@ async def test_joined_date_never_after_first_order(client):
     await client.delete(f"/api/activities/{a['id']}")
     row = (await client.get(f"/api/resellers/{r['id']}")).json(); row = row.get("reseller", row)
     assert row["joinedDate"] == mid
+
+
+@pytest.mark.asyncio
+async def test_invoice_bank_and_issuer(client):
+    r = await make_reseller(client)
+    a = (await client.post("/api/activities", json={"resellerId": r["id"], "type": "order", "qty": 10, "amount": 238000, "date": today().isoformat()})).json()["activity"]
+    c = (await client.get(f"/api/activities/{a['id']}")).json()["company"]
+    assert c["bank"] == "BCA 7773067688 an. PT. Citarasa Kuliner Indonesia" and c["invoiceBy"] == "Muhammad Ilham - Channel Development"
+    # bisa diganti di Pengaturan; dikosongkan = kembali ke bawaan
+    st = (await client.get("/api/settings")).json()
+    st["company"] = {**st["company"], "invoiceBy": "Budi - Finance", "bank": ""}
+    assert (await client.put("/api/settings", json=st)).status_code == 200
+    c = (await client.get(f"/api/activities/{a['id']}")).json()["company"]
+    assert c["invoiceBy"] == "Budi - Finance" and c["bank"].startswith("BCA 7773067688")

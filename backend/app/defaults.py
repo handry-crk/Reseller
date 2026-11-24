@@ -30,7 +30,8 @@ DEFAULT_SETTINGS = {
         "address": "Bandung, Jawa Barat",
         "phone": "",
         "email": "",
-        "bank": "",
+        "bank": "BCA 7773067688 an. PT. Citarasa Kuliner Indonesia",
+        "invoiceBy": "Muhammad Ilham - Channel Development",
         "invoiceNote": "Terima kasih telah menjadi mitra reseller Cimol Bojot AA.",
     },
 }

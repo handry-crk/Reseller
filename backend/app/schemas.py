@@ -210,6 +210,7 @@ class CompanyIn(BaseModel):
     phone: str = ""
     email: str = ""
     bank: str = ""
+    invoiceBy: str = ""
     invoiceNote: str = ""
 
 
